@@ -18,11 +18,18 @@ import { translations } from '../utils/i18n';
 import confetti from 'canvas-confetti';
 
 interface AppContextType {
-  // Auth & Workspace
+  // Auth & Onboarding State
+  hasSeenOnboarding: boolean;
+  completeOnboarding: () => void;
+  currentUser: User | null;
+  isAuthenticated: boolean;
+  loginOrRegister: (data: { name: string; email: string; password?: string; isSignUp: boolean }) => Promise<boolean>;
+  logout: () => void;
+
+  // Workspace & Sharing
   users: User[];
-  currentUser: User;
   workspaces: Workspace[];
-  activeWorkspace: Workspace;
+  activeWorkspace: Workspace | null;
   currentUserRole: UserRole;
   canEdit: boolean;
   isViewerOnly: boolean;
@@ -41,8 +48,6 @@ interface AppContextType {
   budgetLimits: BudgetLimit[];
 
   // Methods
-  switchUser: (userId: string) => void;
-  createAccount: (name: string, email: string) => void;
   switchWorkspace: (workspaceId: string) => void;
   createWorkspace: (name: string, description?: string, currency?: CurrencyCode) => Workspace;
   addMemberToWorkspace: (emailOrName: string, role: UserRole) => boolean;
@@ -75,16 +80,19 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // State Initialization
+  // Onboarding & Persistent Session
+  const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean>(() => StorageService.hasCompletedOnboarding());
+  const [currentUser, setCurrentUser] = useState<User | null>(() => StorageService.getCurrentUser());
+
+  // Workspace & Data State
   const [users, setUsers] = useState<User[]>(() => StorageService.getUsers());
-  const [currentUserId, setCurrentUserId] = useState<string>(() => StorageService.getCurrentUserId());
   const [workspaces, setWorkspaces] = useState<Workspace[]>(() => StorageService.getWorkspaces());
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(() => StorageService.getActiveWorkspaceId());
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(() => StorageService.getActiveWorkspaceId());
   const [transactions, setTransactions] = useState<Transaction[]>(() => StorageService.getTransactions());
   const [budgetLimits, setBudgetLimits] = useState<BudgetLimit[]>(() => StorageService.getBudgetLimits());
   const [isDbOnline, setIsDbOnline] = useState<boolean>(false);
 
-  // Preferences: Default to English and Gregorian as requested
+  // Preferences: Default to English and Gregorian with DKK currency
   const [language, setLanguageState] = useState<Language>(() => {
     return (localStorage.getItem('budgetmaster_lang') as Language) || 'en';
   });
@@ -99,13 +107,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentMonthKey());
 
-  // Fetch initial data from backend PostgreSQL database if available
+  const isAuthenticated = Boolean(currentUser);
+
+  // Complete onboarding
+  const completeOnboarding = () => {
+    StorageService.setOnboardingCompleted();
+    setHasSeenOnboarding(true);
+  };
+
+  // Sync with backend database when user is authenticated
   useEffect(() => {
     async function syncWithDatabase() {
       const health = await ApiService.checkHealth();
       if (health.database === 'connected') {
         setIsDbOnline(true);
-        console.log('🔗 PostgreSQL database active. Syncing latest data...');
+        console.log('🔗 PostgreSQL database active. Syncing data...');
 
         const [remoteTxs, remoteWs, remoteBudgets, remoteUsers] = await Promise.all([
           ApiService.getTransactions(),
@@ -114,43 +130,123 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ApiService.getUsers(),
         ]);
 
-        if (remoteTxs && remoteTxs.length > 0) {
+        if (remoteTxs) {
           setTransactions(remoteTxs);
           StorageService.saveTransactions(remoteTxs);
         }
         if (remoteWs && remoteWs.length > 0) {
           setWorkspaces(remoteWs);
           StorageService.saveWorkspaces(remoteWs);
+          if (!activeWorkspaceId) {
+            setActiveWorkspaceId(remoteWs[0].id);
+            StorageService.setActiveWorkspaceId(remoteWs[0].id);
+          }
         }
-        if (remoteBudgets && remoteBudgets.length > 0) {
+        if (remoteBudgets) {
           setBudgetLimits(remoteBudgets);
           StorageService.saveBudgetLimits(remoteBudgets);
         }
-        if (remoteUsers && remoteUsers.length > 0) {
+        if (remoteUsers) {
           setUsers(remoteUsers);
-          localStorage.setItem('budgetmaster_users_v1', JSON.stringify(remoteUsers));
+          StorageService.saveUsers(remoteUsers);
         }
       }
     }
-    syncWithDatabase();
-  }, []);
 
-  // Find Current User
-  const currentUser = useMemo(() => {
-    const found = users.find((u) => u.id === currentUserId);
-    return found || users[0] || { id: 'unknown', name: 'User', email: 'user@example.com', created_at: '' };
-  }, [users, currentUserId]);
+    if (isAuthenticated) {
+      syncWithDatabase();
+    }
+  }, [isAuthenticated]);
 
-  // Find Active Workspace
+  // Login or Register handler
+  const loginOrRegister = async (data: {
+    name: string;
+    email: string;
+    password?: string;
+    isSignUp: boolean;
+  }): Promise<boolean> => {
+    const emailNorm = data.email.toLowerCase().trim();
+    let existingUser = users.find((u) => u.email.toLowerCase() === emailNorm);
+
+    let activeUser: User;
+
+    if (!existingUser) {
+      activeUser = {
+        id: `user_${Date.now()}`,
+        name: data.name || emailNorm.split('@')[0],
+        email: emailNorm,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.name || emailNorm}`,
+        created_at: new Date().toISOString(),
+      };
+      const updatedUsers = [...users, activeUser];
+      setUsers(updatedUsers);
+      StorageService.saveUsers(updatedUsers);
+      ApiService.saveUser(activeUser);
+    } else {
+      activeUser = existingUser;
+    }
+
+    // Set persistent session
+    setCurrentUser(activeUser);
+    StorageService.setCurrentUser(activeUser);
+
+    // Check if user has an active workspace, if not create default Personal Wallet in DKK
+    const userWorkspaces = workspaces.filter(
+      (w) => w.owner_id === activeUser.id || w.members.some((m) => m.user_id === activeUser.id)
+    );
+
+    if (userWorkspaces.length === 0) {
+      const defaultWs: Workspace = {
+        id: `ws_${Date.now()}`,
+        name: language === 'fa' ? 'کیف پول شخصی' : 'Personal Wallet',
+        description: 'Primary personal budget',
+        owner_id: activeUser.id,
+        currency: 'DKK',
+        members: [
+          {
+            user_id: activeUser.id,
+            name: activeUser.name,
+            email: activeUser.email,
+            avatar: activeUser.avatar,
+            role: 'owner',
+            joined_at: new Date().toISOString(),
+          },
+        ],
+        created_at: new Date().toISOString(),
+      };
+      const updatedWsList = [...workspaces, defaultWs];
+      setWorkspaces(updatedWsList);
+      StorageService.saveWorkspaces(updatedWsList);
+      ApiService.createWorkspace(defaultWs);
+
+      setActiveWorkspaceId(defaultWs.id);
+      StorageService.setActiveWorkspaceId(defaultWs.id);
+    } else {
+      setActiveWorkspaceId(userWorkspaces[0].id);
+      StorageService.setActiveWorkspaceId(userWorkspaces[0].id);
+    }
+
+    return true;
+  };
+
+  // Logout
+  const logout = () => {
+    StorageService.clearSession();
+    setCurrentUser(null);
+    setActiveWorkspaceId(null);
+  };
+
+  // Active Workspace
   const activeWorkspace = useMemo(() => {
+    if (!currentUser || workspaces.length === 0) return null;
     const found = workspaces.find((w) => w.id === activeWorkspaceId);
-    return found || workspaces[0];
-  }, [workspaces, activeWorkspaceId]);
+    return found || workspaces[0] || null;
+  }, [workspaces, activeWorkspaceId, currentUser]);
 
   // Workspace Currency
   const currency = activeWorkspace?.currency || 'DKK';
 
-  // Calculate User's Role in Active Workspace
+  // Role
   const currentUserRole = useMemo<UserRole>(() => {
     if (!activeWorkspace || !currentUser) return 'viewer';
     if (activeWorkspace.owner_id === currentUser.id) return 'owner';
@@ -193,28 +289,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('budgetmaster_cal', calendar);
   }, [calendar]);
 
-  // Switch User
-  const switchUser = (userId: string) => {
-    setCurrentUserId(userId);
-    StorageService.setCurrentUserId(userId);
-  };
-
-  // Create User
-  const createAccount = (name: string, email: string) => {
-    const newUser: User = {
-      id: `user_${Date.now()}`,
-      name,
-      email,
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
-      created_at: new Date().toISOString(),
-    };
-    const updatedUsers = [...users, newUser];
-    setUsers(updatedUsers);
-    localStorage.setItem('budgetmaster_users_v1', JSON.stringify(updatedUsers));
-    ApiService.saveUser(newUser);
-    switchUser(newUser.id);
-  };
-
   // Switch Workspace
   const switchWorkspace = (workspaceId: string) => {
     setActiveWorkspaceId(workspaceId);
@@ -223,6 +297,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Create Workspace
   const createWorkspace = (name: string, description?: string, curr: CurrencyCode = 'DKK'): Workspace => {
+    if (!currentUser) throw new Error('Must be logged in');
     const newWs: Workspace = {
       id: `ws_${Date.now()}`,
       name,
@@ -251,8 +326,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Add Member
   const addMemberToWorkspace = (emailOrName: string, role: UserRole): boolean => {
-    if (currentUserRole !== 'owner') return false;
-    // Check if user already exists
+    if (!activeWorkspace || currentUserRole !== 'owner') return false;
     let targetUser = users.find(
       (u) => u.email.toLowerCase() === emailOrName.toLowerCase() || u.name.toLowerCase() === emailOrName.toLowerCase()
     );
@@ -267,7 +341,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       const updatedUsers = [...users, targetUser];
       setUsers(updatedUsers);
-      localStorage.setItem('budgetmaster_users_v1', JSON.stringify(updatedUsers));
+      StorageService.saveUsers(updatedUsers);
       ApiService.saveUser(targetUser);
     }
 
@@ -304,7 +378,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Update Member Role
   const updateMemberRole = (userId: string, role: UserRole) => {
-    if (currentUserRole !== 'owner') return;
+    if (!activeWorkspace || currentUserRole !== 'owner') return;
     const updatedWorkspaces = workspaces.map((w) => {
       if (w.id === activeWorkspace.id) {
         return {
@@ -321,7 +395,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Remove Member
   const removeMemberFromWorkspace = (userId: string) => {
-    if (currentUserRole !== 'owner') return;
+    if (!activeWorkspace || currentUserRole !== 'owner') return;
     const updatedWorkspaces = workspaces.map((w) => {
       if (w.id === activeWorkspace.id) {
         return {
@@ -345,7 +419,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     payment_method?: 'cash' | 'card' | 'bank_transfer' | 'crypto';
     tags?: string[];
   }): boolean => {
-    if (!canEdit) return false;
+    if (!activeWorkspace || !currentUser || !canEdit) return false;
 
     const newTx: Transaction = {
       id: `tx_${Date.now()}`,
@@ -398,7 +472,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Set Budget Limit
   const setBudgetLimit = (categoryId: string, limitAmount: number) => {
-    if (!canEdit) return;
+    if (!activeWorkspace || !canEdit) return;
     const existingIndex = budgetLimits.findIndex(
       (b) => b.workspace_id === activeWorkspace.id && b.category_id === categoryId && b.month === selectedMonth
     );
@@ -426,7 +500,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Set Currency
   const setCurrency = (curr: CurrencyCode) => {
-    if (currentUserRole !== 'owner') return;
+    if (!activeWorkspace || currentUserRole !== 'owner') return;
     const updated = workspaces.map((w) => (w.id === activeWorkspace.id ? { ...w, currency: curr } : w));
     setWorkspaces(updated);
     StorageService.saveWorkspaces(updated);
@@ -469,8 +543,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider
       value={{
-        users,
+        hasSeenOnboarding,
+        completeOnboarding,
         currentUser,
+        isAuthenticated,
+        loginOrRegister,
+        logout,
+        users,
         workspaces,
         activeWorkspace,
         currentUserRole,
@@ -485,8 +564,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         transactions,
         filteredTransactions,
         budgetLimits,
-        switchUser,
-        createAccount,
         switchWorkspace,
         createWorkspace,
         addMemberToWorkspace,

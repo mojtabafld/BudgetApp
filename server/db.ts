@@ -106,37 +106,8 @@ export async function initDatabase(retries = 5, delayMs = 3000): Promise<boolean
         CREATE INDEX IF NOT EXISTS idx_budget_limits_ws_month ON budget_limits(workspace_id, month);
       `);
 
-      // 2. Seed Initial Users if empty
-      const userCheck = await client.query('SELECT COUNT(*) FROM users');
-      if (parseInt(userCheck.rows[0].count, 10) === 0) {
-        console.log('🌱 Seeding initial demo users into PostgreSQL...');
-        await client.query(`
-          INSERT INTO users (id, name, email, avatar) VALUES
-          ('user_alice', 'Alice Johnson', 'alice@example.com', 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80'),
-          ('user_bob', 'Bob Miller (Partner)', 'bob@example.com', 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'),
-          ('user_charlie', 'Charlie Smith (Auditor)', 'charlie@example.com', 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80');
-        `);
-      }
-
-      // 3. Seed Initial Workspaces if empty
-      const wsCheck = await client.query('SELECT COUNT(*) FROM workspaces');
-      if (parseInt(wsCheck.rows[0].count, 10) === 0) {
-        console.log('🌱 Seeding initial DKK workspaces into PostgreSQL...');
-        await client.query(`
-          INSERT INTO workspaces (id, name, description, owner_id, currency) VALUES
-          ('ws_family', 'Shared Family Budget', 'Joint household expenses and shared goals', 'user_alice', 'DKK'),
-          ('ws_personal', 'Personal Wallet', 'Personal day-to-day finances and savings', 'user_alice', 'DKK');
-
-          INSERT INTO workspace_members (workspace_id, user_id, role) VALUES
-          ('ws_family', 'user_alice', 'owner'),
-          ('ws_family', 'user_bob', 'editor'),
-          ('ws_family', 'user_charlie', 'viewer'),
-          ('ws_personal', 'user_alice', 'owner');
-        `);
-      }
-
       client.release();
-      console.log('✅ PostgreSQL database schema verified and seed data initialized successfully.');
+      console.log('✅ PostgreSQL database schema verified successfully.');
       return true;
     } catch (error) {
       console.error(`⚠️ Database connection attempt ${attempt} failed:`, error);

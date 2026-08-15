@@ -15,24 +15,19 @@ import {
   Check,
   Plus,
   LogOut,
-  UserCheck,
 } from 'lucide-react';
 
 interface NavbarProps {
   onOpenShareModal: () => void;
   onOpenWorkspaceModal: () => void;
-  onOpenAuthModal: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   onOpenShareModal,
   onOpenWorkspaceModal,
-  onOpenAuthModal,
 }) => {
   const {
     currentUser,
-    users,
-    switchUser,
     workspaces,
     activeWorkspace,
     switchWorkspace,
@@ -47,6 +42,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     setLanguage,
     calendar,
     setCalendar,
+    logout,
     t,
   } = useApp();
 
@@ -104,9 +100,14 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-medium transition-all"
             >
               <Wallet className="w-4 h-4 text-indigo-500" />
-              <span className="max-w-[110px] sm:max-w-[150px] truncate">{activeWorkspace?.name}</span>
+              <span className="max-w-[110px] sm:max-w-[150px] truncate">
+                {activeWorkspace?.name || 'My Wallet'}
+              </span>
               {isDbOnline && (
-                <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold" title="Connected to PostgreSQL Dev Database">
+                <span
+                  className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold"
+                  title="Connected to PostgreSQL Database"
+                >
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                   DB
                 </span>
@@ -128,7 +129,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="space-y-1 my-1">
                   {workspaces.map((ws) => {
                     const isSelected = ws.id === activeWorkspace?.id;
-                    const isOwner = ws.owner_id === currentUser.id;
+                    const isOwner = ws.owner_id === currentUser?.id;
                     return (
                       <button
                         key={ws.id}
@@ -147,7 +148,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           <div className="text-start truncate">
                             <div className="truncate">{ws.name}</div>
                             <div className="text-[10px] text-slate-400">
-                              {isOwner ? t('role_owner') : `${ws.members.length} members`}
+                              {isOwner ? t('role_owner') : `${ws.members?.length || 1} members`}
                             </div>
                           </div>
                         </div>
@@ -305,26 +306,26 @@ export const Navbar: React.FC<NavbarProps> = ({
             {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
           </button>
 
-          {/* User Profile & Demo Switcher */}
+          {/* User Profile Menu with Logout */}
           <div className="relative" ref={userRef}>
             <button
               onClick={() => setUserMenuOpen(!userMenuOpen)}
               className="flex items-center gap-2 p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              title={currentUser?.name}
+              title={currentUser?.name || 'User'}
             >
               <img
                 src={currentUser?.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=user'}
-                alt={currentUser?.name}
+                alt={currentUser?.name || 'User'}
                 className="w-7 h-7 sm:w-8 sm:h-8 rounded-full ring-2 ring-indigo-500/40 object-cover"
               />
             </button>
 
             {userMenuOpen && (
-              <div className="absolute end-0 mt-2 w-72 glass-modal rounded-2xl p-3 z-50 animate-in fade-in zoom-in-95">
+              <div className="absolute end-0 mt-2 w-64 glass-modal rounded-2xl p-3 z-50 animate-in fade-in zoom-in-95">
                 {/* Active User Header */}
                 <div className="flex items-center gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
                   <img
-                    src={currentUser?.avatar}
+                    src={currentUser?.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=user'}
                     alt={currentUser?.name}
                     className="w-10 h-10 rounded-full ring-2 ring-indigo-500 object-cover"
                   />
@@ -348,49 +349,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 </div>
 
-                {/* Quick Switch Demo Users */}
+                {/* Log Out Button */}
                 <div className="mt-3">
-                  <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                    {t('demo_accounts')}
-                  </div>
-                  <div className="space-y-1">
-                    {users.map((u) => {
-                      const isSelf = u.id === currentUser.id;
-                      return (
-                        <button
-                          key={u.id}
-                          onClick={() => {
-                            switchUser(u.id);
-                            setUserMenuOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs transition-all ${
-                            isSelf
-                              ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-semibold'
-                              : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <img src={u.avatar} alt={u.name} className="w-6 h-6 rounded-full object-cover" />
-                            <span className="truncate">{u.name}</span>
-                          </div>
-                          {isSelf && <UserCheck className="w-3.5 h-3.5 text-indigo-500" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Custom Auth / Add Account */}
-                <div className="mt-3 pt-2 border-t border-slate-200 dark:border-slate-800">
                   <button
                     onClick={() => {
                       setUserMenuOpen(false);
-                      onOpenAuthModal();
+                      logout();
                     }}
-                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
                   >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>{t('switch_user')}</span>
+                    <LogOut className="w-4 h-4" />
+                    <span>{t('logout')}</span>
                   </button>
                 </div>
               </div>

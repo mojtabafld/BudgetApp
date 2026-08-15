@@ -12,13 +12,20 @@ import { MembersView } from './components/MembersView';
 import { TransactionModal } from './components/TransactionModal';
 import { ShareModal } from './components/ShareModal';
 import { WorkspaceModal } from './components/WorkspaceModal';
-import { AuthModal } from './components/AuthModal';
 import { IOSInstallGuide } from './components/IOSInstallGuide';
+import { OnboardingSlider } from './components/OnboardingSlider';
+import { AuthScreen } from './components/AuthScreen';
 import type { Transaction, TransactionType } from './types';
 import { Download, X, Smartphone } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
-  const { t, language } = useApp();
+  const {
+    t,
+    language,
+    hasSeenOnboarding,
+    completeOnboarding,
+    isAuthenticated,
+  } = useApp();
 
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [transactionModalOpen, setTransactionModalOpen] = useState(false);
@@ -27,7 +34,6 @@ const MainLayout: React.FC = () => {
 
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
-  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [iosGuideOpen, setIosGuideOpen] = useState(false);
 
   // PWA Install prompt
@@ -41,7 +47,7 @@ const MainLayout: React.FC = () => {
     const isIosDevice =
       /iPad|iPhone|iPod/.test(navigator.userAgent) ||
       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    
+
     // Check if already in standalone mode
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const isStandalone = (window.navigator as any).standalone || window.matchMedia('(display-mode: standalone)').matches;
@@ -87,13 +93,23 @@ const MainLayout: React.FC = () => {
     setTransactionModalOpen(true);
   };
 
+  // 1. Show 3-Slide Telegram-like Onboarding for first time visitors
+  if (!hasSeenOnboarding) {
+    return <OnboardingSlider onComplete={completeOnboarding} />;
+  }
+
+  // 2. Show Login / Register Screen if not authenticated (stays logged in until logout)
+  if (!isAuthenticated) {
+    return <AuthScreen onSuccess={() => {}} />;
+  }
+
+  // 3. Main Dashboard Application
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       {/* Top Navbar */}
       <Navbar
         onOpenShareModal={() => setShareModalOpen(true)}
         onOpenWorkspaceModal={() => setWorkspaceModalOpen(true)}
-        onOpenAuthModal={() => setAuthModalOpen(true)}
       />
 
       {/* PWA / iOS Install Notification Banner */}
@@ -183,8 +199,6 @@ const MainLayout: React.FC = () => {
         isOpen={workspaceModalOpen}
         onClose={() => setWorkspaceModalOpen(false)}
       />
-
-      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
 
       <IOSInstallGuide isOpen={iosGuideOpen} onClose={() => setIosGuideOpen(false)} />
     </div>
