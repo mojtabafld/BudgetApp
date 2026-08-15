@@ -14,6 +14,49 @@ export const ApiService = {
     }
   },
 
+  // Auth: Register real account in DigitalOcean PostgreSQL
+  register: async (
+    name: string,
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; user?: User; workspaces?: Workspace[]; error?: string }> => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.message || data.error || 'Registration failed' };
+      }
+      return { success: true, user: data.user, workspaces: data.workspaces };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Network connection failed' };
+    }
+  },
+
+  // Auth: Login real account against DigitalOcean PostgreSQL
+  login: async (
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; user?: User; workspaces?: Workspace[]; error?: string }> => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.message || data.error || 'Invalid credentials' };
+      }
+      return { success: true, user: data.user, workspaces: data.workspaces };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Network connection failed' };
+    }
+  },
+
   // Transactions
   getTransactions: async (workspaceId?: string, month?: string): Promise<Transaction[] | null> => {
     try {
@@ -67,12 +110,14 @@ export const ApiService = {
   },
 
   // Workspaces
-  getWorkspaces: async (): Promise<Workspace[] | null> => {
+  getWorkspaces: async (userId?: string): Promise<Workspace[] | null> => {
     try {
-      const res = await fetch(`${API_BASE}/workspaces`);
+      const query = new URLSearchParams();
+      if (userId) query.append('userId', userId);
+      const res = await fetch(`${API_BASE}/workspaces?${query.toString()}`);
       if (!res.ok) return null;
       const data = await res.json();
-      return Array.isArray(data) && data.length > 0 ? data : null;
+      return Array.isArray(data) ? data : null;
     } catch {
       return null;
     }
@@ -111,7 +156,7 @@ export const ApiService = {
       const res = await fetch(`${API_BASE}/budgets`);
       if (!res.ok) return null;
       const data = await res.json();
-      return Array.isArray(data) && data.length > 0 ? data : null;
+      return Array.isArray(data) ? data : null;
     } catch {
       return null;
     }
@@ -123,31 +168,6 @@ export const ApiService = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(budget),
-      });
-      return res.ok;
-    } catch {
-      return false;
-    }
-  },
-
-  // Users
-  getUsers: async (): Promise<User[] | null> => {
-    try {
-      const res = await fetch(`${API_BASE}/users`);
-      if (!res.ok) return null;
-      const data = await res.json();
-      return Array.isArray(data) && data.length > 0 ? data : null;
-    } catch {
-      return null;
-    }
-  },
-
-  saveUser: async (user: User): Promise<boolean> => {
-    try {
-      const res = await fetch(`${API_BASE}/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(user),
       });
       return res.ok;
     } catch {

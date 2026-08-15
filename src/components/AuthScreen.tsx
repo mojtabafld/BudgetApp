@@ -49,20 +49,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
     setLoading(true);
 
     try {
-      const success = await loginOrRegister({
+      const result = await loginOrRegister({
         name: mode === 'signup' ? name.trim() : email.split('@')[0],
         email: email.trim(),
         password: password.trim(),
         isSignUp: mode === 'signup',
       });
 
-      if (success) {
+      if (result.success) {
         onSuccess();
       } else {
-        setError(isFa ? 'خطا در احراز هویت. لطفاً مجدداً تلاش کنید.' : 'Authentication failed. Please try again.');
+        setError(
+          result.error ||
+            (isFa
+              ? 'خطا در احراز هویت. لطفاً مشخصات را بررسی کنید.'
+              : 'Authentication failed. Please check credentials.')
+        );
       }
     } catch {
-      setError(isFa ? 'خطایی رخ داد.' : 'An error occurred.');
+      setError(isFa ? 'خطای ارتباط با سرور رخ داد.' : 'Server communication error.');
     } finally {
       setLoading(false);
     }

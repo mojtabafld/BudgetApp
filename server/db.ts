@@ -27,7 +27,7 @@ export const pool = new Pool({
 
 export const isDbConfigured = Boolean(connectionString);
 
-// Auto-migration, Schema Verification & Initial Seeding
+// Auto-migration & Schema Verification
 export async function initDatabase(retries = 5, delayMs = 3000): Promise<boolean> {
   if (!isDbConfigured) {
     console.log('ℹ️ No DATABASE_URL provided. Operating in LocalStorage fallback mode.');
@@ -46,6 +46,7 @@ export async function initDatabase(retries = 5, delayMs = 3000): Promise<boolean
             id VARCHAR(64) PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) UNIQUE NOT NULL,
+            password_hash TEXT,
             avatar TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
@@ -103,13 +104,19 @@ export async function initDatabase(retries = 5, delayMs = 3000): Promise<boolean
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
 
+        -- Add columns if missing in existing database instances
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+        ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE;
+        ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurring_months INT DEFAULT 1;
+
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
         CREATE INDEX IF NOT EXISTS idx_transactions_workspace ON transactions(workspace_id);
         CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
         CREATE INDEX IF NOT EXISTS idx_budget_limits_ws_month ON budget_limits(workspace_id, month);
       `);
 
       client.release();
-      console.log('✅ PostgreSQL database schema verified successfully.');
+      console.log('✅ PostgreSQL database schema and migrations verified successfully.');
       return true;
     } catch (error) {
       console.error(`⚠️ Database connection attempt ${attempt} failed:`, error);

@@ -23,7 +23,12 @@ interface AppContextType {
   completeOnboarding: () => void;
   currentUser: User | null;
   isAuthenticated: boolean;
-  loginOrRegister: (data: { name: string; email: string; password?: string; isSignUp: boolean }) => Promise<boolean>;
+  loginOrRegister: (data: {
+    name: string;
+    email: string;
+    password: string;
+    isSignUp: boolean;
+  }) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 
   // Workspace & Sharing
@@ -117,40 +122,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setHasSeenOnboarding(true);
   };
 
-  // Sync with backend database when user is authenticated
+  // Sync with backend PostgreSQL database when user is authenticated
   useEffect(() => {
     async function syncWithDatabase() {
       const health = await ApiService.checkHealth();
       if (health.database === 'connected') {
         setIsDbOnline(true);
-        console.log('🔗 PostgreSQL database active. Syncing data...');
+        console.log('🔗 PostgreSQL database active. Fetching verified user data...');
 
-        const [remoteTxs, remoteWs, remoteBudgets, remoteUsers] = await Promise.all([
-          ApiService.getTransactions(),
-          ApiService.getWorkspaces(),
-          ApiService.getBudgets(),
-          ApiService.getUsers(),
-        ]);
+        if (currentUser) {
+          const [remoteWs, remoteTxs, remoteBudgets] = await Promise.all([
+            ApiService.getWorkspaces(currentUser.id),
+            ApiService.getTransactions(activeWorkspaceId || undefined),
+            ApiService.getBudgets(),
+          ]);
 
-        if (remoteTxs) {
-          setTransactions(remoteTxs);
-          StorageService.saveTransactions(remoteTxs);
-        }
-        if (remoteWs && remoteWs.length > 0) {
-          setWorkspaces(remoteWs);
-          StorageService.saveWorkspaces(remoteWs);
-          if (!activeWorkspaceId) {
-            setActiveWorkspaceId(remoteWs[0].id);
-            StorageService.setActiveWorkspaceId(remoteWs[0].id);
+          if (remoteWs && remoteWs.length > 0) {
+            setWorkspaces(remoteWs);
+            StorageService.saveWorkspaces(remoteWs);
+            if (!activeWorkspaceId || !remoteWs.some((w) => w.id === activeWorkspaceId)) {
+              setActiveWorkspaceId(remoteWs[0].id);
+              StorageService.setActiveWorkspaceId(remoteWs[0].id);
+            }
           }
-        }
-        if (remoteBudgets) {
-          setBudgetLimits(remoteBudgets);
-          StorageService.saveBudgetLimits(remoteBudgets);
-        }
-        if (remoteUsers) {
-          setUsers(remoteUsers);
-          StorageService.saveUsers(remoteUsers);
+
+          if (remoteTxs) {
+            setTransactions(remoteTxs);
+            StorageService.saveTransactions(remoteTxs);
+          }
+
+          if (remoteBudgets) {
+            setBudgetLimits(remoteBudgets);
+            StorageService.saveBudgetLimits(remoteBudgets);
+          }
         }
       }
     }
@@ -158,84 +162,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isAuthenticated) {
       syncWithDatabase();
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, activeWorkspaceId, currentUser]);
 
-  // Login or Register handler
+  // Real Database Login & Register
   const loginOrRegister = async (data: {
     name: string;
     email: string;
-    password?: string;
+    password: string;
     isSignUp: boolean;
-  }): Promise<boolean> => {
+  }): Promise<{ success: boolean; error?: string }> => {
     const emailNorm = data.email.toLowerCase().trim();
-    let existingUser = users.find((u) => u.email.toLowerCase() === emailNorm);
 
-    let activeUser: User;
+    if (data.isSignUp) {
+      // 1. Real Registration on PostgreSQL
+      const regRes = await ApiService.register(data.name, emailNorm, data.password);
+      if (!regRes.success || !regRes.user) {
+        return { success: false, error: regRes.error || 'Registration failed' };
+      }
 
-    if (!existingUser) {
-      activeUser = {
-        id: `user_${Date.now()}`,
-        name: data.name || emailNorm.split('@')[0],
-        email: emailNorm,
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.name || emailNorm}`,
-        created_at: new Date().toISOString(),
-      };
-      const updatedUsers = [...users, activeUser];
-      setUsers(updatedUsers);
-      StorageService.saveUsers(updatedUsers);
-      ApiService.saveUser(activeUser);
+      const registeredUser = regRes.user;
+      setCurrentUser(registeredUser);
+      StorageService.setCurrentUser(registeredUser);
+
+      const userWorkspaces = regRes.workspaces || [];
+      if (userWorkspaces.length > 0) {
+        setWorkspaces(userWorkspaces);
+        StorageService.saveWorkspaces(userWorkspaces);
+        setActiveWorkspaceId(userWorkspaces[0].id);
+        StorageService.setActiveWorkspaceId(userWorkspaces[0].id);
+      }
+
+      return { success: true };
     } else {
-      activeUser = existingUser;
+      // 2. Real Login against PostgreSQL
+      const loginRes = await ApiService.login(emailNorm, data.password);
+      if (!loginRes.success || !loginRes.user) {
+        return { success: false, error: loginRes.error || 'Invalid email or password' };
+      }
+
+      const loggedInUser = loginRes.user;
+      setCurrentUser(loggedInUser);
+      StorageService.setCurrentUser(loggedInUser);
+
+      const userWorkspaces = loginRes.workspaces || [];
+      if (userWorkspaces.length > 0) {
+        setWorkspaces(userWorkspaces);
+        StorageService.saveWorkspaces(userWorkspaces);
+        setActiveWorkspaceId(userWorkspaces[0].id);
+        StorageService.setActiveWorkspaceId(userWorkspaces[0].id);
+      }
+
+      // Fetch user's transactions
+      const txs = await ApiService.getTransactions(userWorkspaces[0]?.id);
+      if (txs) {
+        setTransactions(txs);
+        StorageService.saveTransactions(txs);
+      }
+
+      return { success: true };
     }
-
-    // Set persistent session
-    setCurrentUser(activeUser);
-    StorageService.setCurrentUser(activeUser);
-
-    // Check if user has an active workspace, if not create default Personal Wallet in DKK
-    const userWorkspaces = workspaces.filter(
-      (w) => w.owner_id === activeUser.id || w.members.some((m) => m.user_id === activeUser.id)
-    );
-
-    if (userWorkspaces.length === 0) {
-      const defaultWs: Workspace = {
-        id: `ws_${Date.now()}`,
-        name: language === 'fa' ? 'کیف پول شخصی' : 'Personal Wallet',
-        description: 'Primary personal budget',
-        owner_id: activeUser.id,
-        currency: 'DKK',
-        members: [
-          {
-            user_id: activeUser.id,
-            name: activeUser.name,
-            email: activeUser.email,
-            avatar: activeUser.avatar,
-            role: 'owner',
-            joined_at: new Date().toISOString(),
-          },
-        ],
-        created_at: new Date().toISOString(),
-      };
-      const updatedWsList = [...workspaces, defaultWs];
-      setWorkspaces(updatedWsList);
-      StorageService.saveWorkspaces(updatedWsList);
-      ApiService.createWorkspace(defaultWs);
-
-      setActiveWorkspaceId(defaultWs.id);
-      StorageService.setActiveWorkspaceId(defaultWs.id);
-    } else {
-      setActiveWorkspaceId(userWorkspaces[0].id);
-      StorageService.setActiveWorkspaceId(userWorkspaces[0].id);
-    }
-
-    return true;
   };
 
-  // Logout
+  // Logout (Clears active session)
   const logout = () => {
     StorageService.clearSession();
     setCurrentUser(null);
     setActiveWorkspaceId(null);
+    setTransactions([]);
+    setWorkspaces([]);
   };
 
   // Active Workspace
@@ -292,9 +286,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [calendar]);
 
   // Switch Workspace
-  const switchWorkspace = (workspaceId: string) => {
+  const switchWorkspace = async (workspaceId: string) => {
     setActiveWorkspaceId(workspaceId);
     StorageService.setActiveWorkspaceId(workspaceId);
+    // Fetch transactions for newly selected workspace
+    const txs = await ApiService.getTransactions(workspaceId);
+    if (txs) {
+      setTransactions(txs);
+      StorageService.saveTransactions(txs);
+    }
   };
 
   // Create Workspace
@@ -344,7 +344,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updatedUsers = [...users, targetUser];
       setUsers(updatedUsers);
       StorageService.saveUsers(updatedUsers);
-      ApiService.saveUser(targetUser);
     }
 
     const existingMember = activeWorkspace.members.find((m) => m.user_id === targetUser!.id);
@@ -411,7 +410,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     StorageService.saveWorkspaces(updatedWorkspaces);
   };
 
-  // Add Transaction (with automatic future recurring months generation)
+  // Add Transaction
   const addTransaction = (data: {
     type: 'income' | 'expense';
     amount: number;
@@ -460,7 +459,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Calculate future YYYY-MM
         const futureMonthKey = shiftMonth(baseMonthKey, offset);
         const [fYear, fMonth] = futureMonthKey.split('-');
-        
+
         // Ensure day is valid for future month
         const maxDaysInFutureMonth = new Date(parseInt(fYear, 10), parseInt(fMonth, 10), 0).getDate();
         const validDay = Math.min(dayNum, maxDaysInFutureMonth).toString().padStart(2, '0');

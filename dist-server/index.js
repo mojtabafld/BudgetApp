@@ -6,6 +6,7 @@ import dotenv2 from "dotenv";
 
 // server/routes.ts
 import { Router } from "express";
+import crypto from "crypto";
 
 // server/db.ts
 import pg from "pg";
@@ -39,6 +40,7 @@ async function initDatabase(retries = 5, delayMs = 3e3) {
             id VARCHAR(64) PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) UNIQUE NOT NULL,
+            password_hash TEXT,
             avatar TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
@@ -96,12 +98,18 @@ async function initDatabase(retries = 5, delayMs = 3e3) {
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
 
+        -- Add columns if missing in existing database instances
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+        ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE;
+        ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurring_months INT DEFAULT 1;
+
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
         CREATE INDEX IF NOT EXISTS idx_transactions_workspace ON transactions(workspace_id);
         CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
         CREATE INDEX IF NOT EXISTS idx_budget_limits_ws_month ON budget_limits(workspace_id, month);
       `);
       client.release();
-      console.log("\u2705 PostgreSQL database schema verified successfully.");
+      console.log("\u2705 PostgreSQL database schema and migrations verified successfully.");
       return true;
     } catch (error) {
       console.error(`\u26A0\uFE0F Database connection attempt ${attempt} failed:`, error);
@@ -117,6 +125,17 @@ async function initDatabase(retries = 5, delayMs = 3e3) {
 
 // server/routes.ts
 var router = Router();
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");
+  return `${salt}:${hash}`;
+}
+function verifyPassword(password, storedHash) {
+  if (!storedHash || !storedHash.includes(":")) return false;
+  const [salt, originalHash] = storedHash.split(":");
+  const hash = crypto.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");
+  return hash === originalHash;
+}
 router.get("/health", async (req, res) => {
   if (!isDbConfigured) {
     return res.json({ status: "ok", database: "disconnected", mode: "offline/local" });
@@ -126,6 +145,140 @@ router.get("/health", async (req, res) => {
     return res.json({ status: "ok", database: "connected", time: dbRes.rows[0].now });
   } catch (err) {
     return res.status(500).json({ status: "error", database: "error", error: err.message });
+  }
+});
+router.post("/auth/register", async (req, res) => {
+  if (!isDbConfigured) {
+    return res.status(500).json({ error: "Database not connected. Please verify DATABASE_URL." });
+  }
+  try {
+    const { name, email, password } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: "Name, email, and password are required" });
+    }
+    const emailNorm = email.trim().toLowerCase();
+    const existing = await pool.query("SELECT id FROM users WHERE LOWER(email) = $1", [emailNorm]);
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: "EMAIL_EXISTS", message: "An account with this email already exists" });
+    }
+    const userId = `user_${Date.now()}`;
+    const pwdHash = hashPassword(password);
+    const avatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`;
+    await pool.query(
+      `INSERT INTO users (id, name, email, password_hash, avatar)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [userId, name.trim(), emailNorm, pwdHash, avatar]
+    );
+    const wsId = `ws_${Date.now()}`;
+    await pool.query(
+      `INSERT INTO workspaces (id, name, description, owner_id, currency)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [wsId, "Personal Wallet", "Personal finances & savings", userId, "DKK"]
+    );
+    await pool.query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role)
+       VALUES ($1, $2, $3)`,
+      [wsId, userId, "owner"]
+    );
+    const userObj = {
+      id: userId,
+      name: name.trim(),
+      email: emailNorm,
+      avatar,
+      created_at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    const workspaceObj = {
+      id: wsId,
+      name: "Personal Wallet",
+      description: "Personal finances & savings",
+      owner_id: userId,
+      currency: "DKK",
+      members: [
+        {
+          user_id: userId,
+          name: name.trim(),
+          email: emailNorm,
+          avatar,
+          role: "owner",
+          joined_at: (/* @__PURE__ */ new Date()).toISOString()
+        }
+      ],
+      created_at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    return res.status(201).json({
+      success: true,
+      user: userObj,
+      workspaces: [workspaceObj]
+    });
+  } catch (err) {
+    console.error("Registration error:", err);
+    return res.status(500).json({ error: "Registration failed: " + err.message });
+  }
+});
+router.post("/auth/login", async (req, res) => {
+  if (!isDbConfigured) {
+    return res.status(500).json({ error: "Database not connected. Please verify DATABASE_URL." });
+  }
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
+    const emailNorm = email.trim().toLowerCase();
+    const userRes = await pool.query("SELECT * FROM users WHERE LOWER(email) = $1", [emailNorm]);
+    if (userRes.rows.length === 0) {
+      return res.status(401).json({ error: "INVALID_CREDENTIALS", message: "No account found with this email" });
+    }
+    const userRow = userRes.rows[0];
+    if (!userRow.password_hash || !verifyPassword(password, userRow.password_hash)) {
+      return res.status(401).json({ error: "INVALID_CREDENTIALS", message: "Incorrect password" });
+    }
+    const wsRes = await pool.query(
+      `SELECT w.* FROM workspaces w
+       JOIN workspace_members wm ON w.id = wm.workspace_id
+       WHERE wm.user_id = $1
+       ORDER BY w.created_at ASC`,
+      [userRow.id]
+    );
+    const membersRes = await pool.query(
+      `SELECT wm.*, u.name, u.email, u.avatar 
+       FROM workspace_members wm 
+       LEFT JOIN users u ON wm.user_id = u.id`
+    );
+    const workspaces = wsRes.rows.map((ws) => {
+      const members = membersRes.rows.filter((m) => m.workspace_id === ws.id).map((m) => ({
+        user_id: m.user_id,
+        name: m.name || "Member",
+        email: m.email || "",
+        avatar: m.avatar,
+        role: m.role,
+        joined_at: m.joined_at
+      }));
+      return {
+        id: ws.id,
+        name: ws.name,
+        description: ws.description,
+        owner_id: ws.owner_id,
+        currency: ws.currency || "DKK",
+        members,
+        created_at: ws.created_at
+      };
+    });
+    const userObj = {
+      id: userRow.id,
+      name: userRow.name,
+      email: userRow.email,
+      avatar: userRow.avatar,
+      created_at: userRow.created_at
+    };
+    return res.json({
+      success: true,
+      user: userObj,
+      workspaces
+    });
+  } catch (err) {
+    console.error("Login error:", err);
+    return res.status(500).json({ error: "Login failed: " + err.message });
   }
 });
 router.get("/transactions", async (req, res) => {
@@ -241,7 +394,17 @@ router.delete("/transactions/:id", async (req, res) => {
 router.get("/workspaces", async (req, res) => {
   if (!isDbConfigured) return res.json([]);
   try {
-    const wsRes = await pool.query("SELECT * FROM workspaces ORDER BY created_at ASC");
+    const { userId } = req.query;
+    let query = "SELECT * FROM workspaces ORDER BY created_at ASC";
+    const params = [];
+    if (userId) {
+      query = `SELECT w.* FROM workspaces w
+               JOIN workspace_members wm ON w.id = wm.workspace_id
+               WHERE wm.user_id = $1
+               ORDER BY w.created_at ASC`;
+      params.push(userId);
+    }
+    const wsRes = await pool.query(query, params);
     const membersRes = await pool.query(
       `SELECT wm.*, u.name, u.email, u.avatar 
        FROM workspace_members wm 
@@ -350,31 +513,6 @@ router.post("/budgets", async (req, res) => {
       [bId, workspace_id, category_id, month, limit_amount]
     );
     res.json({ success: true, id: bId, ...req.body });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-router.get("/users", async (req, res) => {
-  if (!isDbConfigured) return res.json([]);
-  try {
-    const result = await pool.query("SELECT * FROM users ORDER BY created_at ASC");
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-router.post("/users", async (req, res) => {
-  if (!isDbConfigured) return res.status(400).json({ error: "Database not configured" });
-  try {
-    const { id, name, email, avatar } = req.body;
-    const uId = id || `user_${Date.now()}`;
-    await pool.query(
-      `INSERT INTO users (id, name, email, avatar)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, avatar = EXCLUDED.avatar`,
-      [uId, name, email, avatar || null]
-    );
-    res.status(201).json({ id: uId, name, email, avatar });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

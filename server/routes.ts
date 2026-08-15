@@ -1,7 +1,22 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { pool, isDbConfigured } from './db';
 
 const router = Router();
+
+// Password Hashing Helpers
+function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password: string, storedHash: string): boolean {
+  if (!storedHash || !storedHash.includes(':')) return false;
+  const [salt, originalHash] = storedHash.split(':');
+  const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return hash === originalHash;
+}
 
 // Health Check & DB Status
 router.get('/health', async (req, res) => {
@@ -15,6 +30,182 @@ router.get('/health', async (req, res) => {
     return res.status(500).json({ status: 'error', database: 'error', error: err.message });
   }
 });
+
+// ==========================================
+// REAL AUTHENTICATION & USER REGISTRATION
+// ==========================================
+
+// Register Real User on DigitalOcean PostgreSQL
+router.post('/auth/register', async (req, res) => {
+  if (!isDbConfigured) {
+    return res.status(500).json({ error: 'Database not connected. Please verify DATABASE_URL.' });
+  }
+
+  try {
+    const { name, email, password } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: 'Name, email, and password are required' });
+    }
+
+    const emailNorm = email.trim().toLowerCase();
+
+    // Check if user already exists
+    const existing = await pool.query('SELECT id FROM users WHERE LOWER(email) = $1', [emailNorm]);
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: 'EMAIL_EXISTS', message: 'An account with this email already exists' });
+    }
+
+    const userId = `user_${Date.now()}`;
+    const pwdHash = hashPassword(password);
+    const avatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`;
+
+    // 1. Insert user
+    await pool.query(
+      `INSERT INTO users (id, name, email, password_hash, avatar)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [userId, name.trim(), emailNorm, pwdHash, avatar]
+    );
+
+    // 2. Create initial Personal Wallet in DKK
+    const wsId = `ws_${Date.now()}`;
+    await pool.query(
+      `INSERT INTO workspaces (id, name, description, owner_id, currency)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [wsId, 'Personal Wallet', 'Personal finances & savings', userId, 'DKK']
+    );
+
+    // 3. Add user as owner of workspace
+    await pool.query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role)
+       VALUES ($1, $2, $3)`,
+      [wsId, userId, 'owner']
+    );
+
+    const userObj = {
+      id: userId,
+      name: name.trim(),
+      email: emailNorm,
+      avatar,
+      created_at: new Date().toISOString(),
+    };
+
+    const workspaceObj = {
+      id: wsId,
+      name: 'Personal Wallet',
+      description: 'Personal finances & savings',
+      owner_id: userId,
+      currency: 'DKK',
+      members: [
+        {
+          user_id: userId,
+          name: name.trim(),
+          email: emailNorm,
+          avatar,
+          role: 'owner',
+          joined_at: new Date().toISOString(),
+        },
+      ],
+      created_at: new Date().toISOString(),
+    };
+
+    return res.status(201).json({
+      success: true,
+      user: userObj,
+      workspaces: [workspaceObj],
+    });
+  } catch (err: any) {
+    console.error('Registration error:', err);
+    return res.status(500).json({ error: 'Registration failed: ' + err.message });
+  }
+});
+
+// Login Real User against PostgreSQL Dev DB
+router.post('/auth/login', async (req, res) => {
+  if (!isDbConfigured) {
+    return res.status(500).json({ error: 'Database not connected. Please verify DATABASE_URL.' });
+  }
+
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const emailNorm = email.trim().toLowerCase();
+
+    // Look up user
+    const userRes = await pool.query('SELECT * FROM users WHERE LOWER(email) = $1', [emailNorm]);
+    if (userRes.rows.length === 0) {
+      return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'No account found with this email' });
+    }
+
+    const userRow = userRes.rows[0];
+
+    // Check password
+    if (!userRow.password_hash || !verifyPassword(password, userRow.password_hash)) {
+      return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Incorrect password' });
+    }
+
+    // Fetch workspaces the user is a member of
+    const wsRes = await pool.query(
+      `SELECT w.* FROM workspaces w
+       JOIN workspace_members wm ON w.id = wm.workspace_id
+       WHERE wm.user_id = $1
+       ORDER BY w.created_at ASC`,
+      [userRow.id]
+    );
+
+    const membersRes = await pool.query(
+      `SELECT wm.*, u.name, u.email, u.avatar 
+       FROM workspace_members wm 
+       LEFT JOIN users u ON wm.user_id = u.id`
+    );
+
+    const workspaces = wsRes.rows.map((ws) => {
+      const members = membersRes.rows
+        .filter((m) => m.workspace_id === ws.id)
+        .map((m) => ({
+          user_id: m.user_id,
+          name: m.name || 'Member',
+          email: m.email || '',
+          avatar: m.avatar,
+          role: m.role,
+          joined_at: m.joined_at,
+        }));
+
+      return {
+        id: ws.id,
+        name: ws.name,
+        description: ws.description,
+        owner_id: ws.owner_id,
+        currency: ws.currency || 'DKK',
+        members,
+        created_at: ws.created_at,
+      };
+    });
+
+    const userObj = {
+      id: userRow.id,
+      name: userRow.name,
+      email: userRow.email,
+      avatar: userRow.avatar,
+      created_at: userRow.created_at,
+    };
+
+    return res.json({
+      success: true,
+      user: userObj,
+      workspaces,
+    });
+  } catch (err: any) {
+    console.error('Login error:', err);
+    return res.status(500).json({ error: 'Login failed: ' + err.message });
+  }
+});
+
+// ==========================================
+// TRANSACTIONS (CRUD)
+// ==========================================
 
 // GET all transactions
 router.get('/transactions', async (req, res) => {
@@ -142,11 +333,27 @@ router.delete('/transactions/:id', async (req, res) => {
   }
 });
 
-// GET all workspaces
+// ==========================================
+// WORKSPACES & MEMBERS
+// ==========================================
+
+// GET workspaces for active user
 router.get('/workspaces', async (req, res) => {
   if (!isDbConfigured) return res.json([]);
   try {
-    const wsRes = await pool.query('SELECT * FROM workspaces ORDER BY created_at ASC');
+    const { userId } = req.query;
+    let query = 'SELECT * FROM workspaces ORDER BY created_at ASC';
+    const params: any[] = [];
+
+    if (userId) {
+      query = `SELECT w.* FROM workspaces w
+               JOIN workspace_members wm ON w.id = wm.workspace_id
+               WHERE wm.user_id = $1
+               ORDER BY w.created_at ASC`;
+      params.push(userId);
+    }
+
+    const wsRes = await pool.query(query, params);
     const membersRes = await pool.query(
       `SELECT wm.*, u.name, u.email, u.avatar 
        FROM workspace_members wm 
@@ -244,7 +451,10 @@ router.delete('/workspaces/:id/members/:userId', async (req, res) => {
   }
 });
 
-// GET budget limits
+// ==========================================
+// BUDGET LIMITS
+// ==========================================
+
 router.get('/budgets', async (req, res) => {
   if (!isDbConfigured) return res.json([]);
   try {
@@ -262,7 +472,6 @@ router.get('/budgets', async (req, res) => {
   }
 });
 
-// POST/PUT budget limit
 router.post('/budgets', async (req, res) => {
   if (!isDbConfigured) return res.status(400).json({ error: 'Database not configured' });
   try {
@@ -277,34 +486,6 @@ router.post('/budgets', async (req, res) => {
     );
 
     res.json({ success: true, id: bId, ...req.body });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET/POST users
-router.get('/users', async (req, res) => {
-  if (!isDbConfigured) return res.json([]);
-  try {
-    const result = await pool.query('SELECT * FROM users ORDER BY created_at ASC');
-    res.json(result.rows);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/users', async (req, res) => {
-  if (!isDbConfigured) return res.status(400).json({ error: 'Database not configured' });
-  try {
-    const { id, name, email, avatar } = req.body;
-    const uId = id || `user_${Date.now()}`;
-    await pool.query(
-      `INSERT INTO users (id, name, email, avatar)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email, avatar = EXCLUDED.avatar`,
-      [uId, name, email, avatar || null]
-    );
-    res.status(201).json({ id: uId, name, email, avatar });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
