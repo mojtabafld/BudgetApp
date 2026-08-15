@@ -47,6 +47,8 @@ router.get('/transactions', async (req, res) => {
       note: row.note,
       payment_method: row.payment_method,
       tags: row.tags || [],
+      is_recurring: Boolean(row.is_recurring),
+      recurring_months: row.recurring_months || 1,
       created_by: {
         id: row.created_by_id,
         name: row.created_by_name,
@@ -64,12 +66,20 @@ router.get('/transactions', async (req, res) => {
 router.post('/transactions', async (req, res) => {
   if (!isDbConfigured) return res.status(400).json({ error: 'Database not configured' });
   try {
-    const { id, workspace_id, type, amount, category_id, date, note, payment_method, tags, created_by } = req.body;
+    const { id, workspace_id, type, amount, category_id, date, note, payment_method, tags, is_recurring, recurring_months, created_by } = req.body;
     const txId = id || `tx_${Date.now()}`;
 
     await pool.query(
-      `INSERT INTO transactions (id, workspace_id, type, amount, category_id, date, note, payment_method, tags, created_by_id, created_by_name, created_by_avatar)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      `INSERT INTO transactions (id, workspace_id, type, amount, category_id, date, note, payment_method, tags, is_recurring, recurring_months, created_by_id, created_by_name, created_by_avatar)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       ON CONFLICT (id) DO UPDATE SET
+         amount = EXCLUDED.amount,
+         category_id = EXCLUDED.category_id,
+         date = EXCLUDED.date,
+         note = EXCLUDED.note,
+         payment_method = EXCLUDED.payment_method,
+         tags = EXCLUDED.tags,
+         is_recurring = EXCLUDED.is_recurring`,
       [
         txId,
         workspace_id,
@@ -80,6 +90,8 @@ router.post('/transactions', async (req, res) => {
         note || null,
         payment_method || 'card',
         tags || [],
+        Boolean(is_recurring),
+        recurring_months || 1,
         created_by?.id || null,
         created_by?.name || null,
         created_by?.avatar || null,

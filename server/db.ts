@@ -86,6 +86,8 @@ export async function initDatabase(retries = 5, delayMs = 3000): Promise<boolean
             note TEXT,
             payment_method VARCHAR(32) DEFAULT 'card',
             tags TEXT[],
+            is_recurring BOOLEAN DEFAULT FALSE,
+            recurring_months INT DEFAULT 1,
             created_by_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
             created_by_name VARCHAR(255),
             created_by_avatar TEXT,

@@ -53,6 +53,8 @@ export interface Transaction {
   note?: string;
   payment_method?: 'cash' | 'card' | 'bank_transfer' | 'crypto';
   tags?: string[];
+  is_recurring?: boolean;
+  recurring_months?: number;
   created_by: {
     id: string;
     name: string;

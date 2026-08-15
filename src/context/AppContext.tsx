@@ -13,7 +13,7 @@ import type {
 } from '../types';
 import { StorageService } from '../utils/storage';
 import { ApiService } from '../utils/api';
-import { getCurrentMonthKey } from '../utils/date';
+import { getCurrentMonthKey, shiftMonth } from '../utils/date';
 import { translations } from '../utils/i18n';
 import confetti from 'canvas-confetti';
 
@@ -62,6 +62,8 @@ interface AppContextType {
     note?: string;
     payment_method?: 'cash' | 'card' | 'bank_transfer' | 'crypto';
     tags?: string[];
+    is_recurring?: boolean;
+    recurring_months?: number;
   }) => boolean;
   updateTransaction: (id: string, updates: Partial<Transaction>) => boolean;
   deleteTransaction: (id: string) => boolean;
@@ -409,7 +411,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     StorageService.saveWorkspaces(updatedWorkspaces);
   };
 
-  // Add Transaction
+  // Add Transaction (with automatic future recurring months generation)
   const addTransaction = (data: {
     type: 'income' | 'expense';
     amount: number;
@@ -418,11 +420,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     note?: string;
     payment_method?: 'cash' | 'card' | 'bank_transfer' | 'crypto';
     tags?: string[];
+    is_recurring?: boolean;
+    recurring_months?: number;
   }): boolean => {
     if (!activeWorkspace || !currentUser || !canEdit) return false;
 
-    const newTx: Transaction = {
-      id: `tx_${Date.now()}`,
+    const baseTxId = `tx_${Date.now()}`;
+    const newTxList: Transaction[] = [];
+
+    // 1. Create base transaction
+    const primaryTx: Transaction = {
+      id: baseTxId,
       workspace_id: activeWorkspace.id,
       type: data.type,
       amount: data.amount,
@@ -431,6 +439,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       note: data.note,
       payment_method: data.payment_method || 'card',
       tags: data.tags || [],
+      is_recurring: data.is_recurring || false,
+      recurring_months: data.recurring_months || 1,
       created_by: {
         id: currentUser.id,
         name: currentUser.name,
@@ -438,11 +448,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
       created_at: new Date().toISOString(),
     };
+    newTxList.push(primaryTx);
 
-    const updated = [newTx, ...transactions];
+    // 2. If recurring monthly expense is selected, generate future months
+    if (data.is_recurring && data.recurring_months && data.recurring_months > 1) {
+      const [yearStr, monthStr, dayStr] = data.date.split('-');
+      const baseMonthKey = `${yearStr}-${monthStr}`;
+      const dayNum = parseInt(dayStr || '1', 10);
+
+      for (let offset = 1; offset < data.recurring_months; offset++) {
+        // Calculate future YYYY-MM
+        const futureMonthKey = shiftMonth(baseMonthKey, offset);
+        const [fYear, fMonth] = futureMonthKey.split('-');
+        
+        // Ensure day is valid for future month
+        const maxDaysInFutureMonth = new Date(parseInt(fYear, 10), parseInt(fMonth, 10), 0).getDate();
+        const validDay = Math.min(dayNum, maxDaysInFutureMonth).toString().padStart(2, '0');
+        const futureDate = `${futureMonthKey}-${validDay}`;
+
+        const recurringTx: Transaction = {
+          id: `tx_${Date.now()}_rec_${offset}`,
+          workspace_id: activeWorkspace.id,
+          type: data.type,
+          amount: data.amount,
+          category_id: data.category_id,
+          date: futureDate,
+          note: data.note,
+          payment_method: data.payment_method || 'card',
+          tags: [...(data.tags || []), 'recurring'],
+          is_recurring: true,
+          recurring_months: data.recurring_months,
+          created_by: {
+            id: currentUser.id,
+            name: currentUser.name,
+            avatar: currentUser.avatar,
+          },
+          created_at: new Date().toISOString(),
+        };
+
+        newTxList.push(recurringTx);
+      }
+    }
+
+    const updated = [...newTxList, ...transactions];
     setTransactions(updated);
     StorageService.saveTransactions(updated);
-    ApiService.createTransaction(newTx);
+
+    // Async save to PostgreSQL database API
+    newTxList.forEach((tx) => ApiService.createTransaction(tx));
 
     if (data.type === 'income') {
       triggerConfetti();

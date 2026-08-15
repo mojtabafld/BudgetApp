@@ -133,3 +133,12 @@ export const DEFAULT_CATEGORIES: Category[] = [
     type: 'income',
   },
 ];
+
+export const EXPENSE_CATEGORIES = DEFAULT_CATEGORIES.filter((c) => c.type === 'expense');
+export const INCOME_CATEGORIES = DEFAULT_CATEGORIES.filter((c) => c.type === 'income');
+
+export const getCategoryById = (id: string): Category => {
+  const found = DEFAULT_CATEGORIES.find((c) => c.id === id);
+  return found || DEFAULT_CATEGORIES[0];
+};
+

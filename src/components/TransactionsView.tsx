@@ -17,6 +17,7 @@ import {
   Coins,
   Eye,
   Tag,
+  Repeat,
 } from 'lucide-react';
 
 interface TransactionsViewProps {
@@ -259,6 +260,12 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({ onOpenTransa
                         >
                           {isIncome ? t('income') : t('expense')}
                         </span>
+                        {tx.is_recurring && (
+                          <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                            <Repeat className="w-3 h-3" />
+                            <span>{t('recurring_badge')}</span>
+                          </span>
+                        )}
                       </div>
 
                       {/* Note & Meta */}
