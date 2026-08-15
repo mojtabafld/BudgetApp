@@ -1,16 +1,8 @@
 import { Router } from 'express';
 import crypto from 'crypto';
-import { pool, isDbConfigured, ensureDatabaseReady } from './db';
+import { pool, isDbConfigured, createAllTables } from './db';
 
 const router = Router();
-
-// Middleware: ensure database schema and tables exist before executing any DB routes
-router.use(async (req, res, next) => {
-  if (isDbConfigured) {
-    await ensureDatabaseReady();
-  }
-  next();
-});
 
 // Password Hashing Helpers
 function hashPassword(password: string): string {
@@ -32,6 +24,7 @@ router.get('/health', async (req, res) => {
     return res.json({ status: 'ok', database: 'disconnected', mode: 'offline/local' });
   }
   try {
+    await createAllTables();
     const dbRes = await pool.query('SELECT NOW()');
     return res.json({ status: 'ok', database: 'connected', time: dbRes.rows[0].now });
   } catch (err: any) {
@@ -50,6 +43,9 @@ router.post('/auth/register', async (req, res) => {
   }
 
   try {
+    // Ensure all tables are created before running registration
+    await createAllTables();
+
     const { name, email, password } = req.body;
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
@@ -134,6 +130,8 @@ router.post('/auth/login', async (req, res) => {
   }
 
   try {
+    await createAllTables();
+
     const { email, password } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
