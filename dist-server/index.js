@@ -36,15 +36,26 @@ var pool = new Pool({
   connectionTimeoutMillis: 1e4
 });
 var isDbConfigured = Boolean(rawConnectionString);
-async function initDatabase(retries = 5, delayMs = 3e3) {
+var isSchemaReady = false;
+var schemaInitPromise = null;
+async function ensureDatabaseReady() {
+  if (isSchemaReady) return true;
+  if (!isDbConfigured) return false;
+  if (!schemaInitPromise) {
+    schemaInitPromise = initDatabase();
+  }
+  return await schemaInitPromise;
+}
+async function initDatabase(retries = 10, delayMs = 2e3) {
   if (!isDbConfigured) {
     console.log("\u2139\uFE0F No DATABASE_URL provided. Operating in LocalStorage fallback mode.");
     return false;
   }
   for (let attempt = 1; attempt <= retries; attempt++) {
+    let client;
     try {
       console.log(`\u{1F4E1} Connecting to PostgreSQL database (Attempt ${attempt}/${retries})...`);
-      const client = await pool.connect();
+      client = await pool.connect();
       console.log("\u2705 Successfully connected to PostgreSQL database (DigitalOcean Dev DB)!");
       await client.query(`
         CREATE TABLE IF NOT EXISTS users (
@@ -55,7 +66,8 @@ async function initDatabase(retries = 5, delayMs = 3e3) {
             avatar TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
-
+      `);
+      await client.query(`
         CREATE TABLE IF NOT EXISTS workspaces (
             id VARCHAR(64) PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
@@ -64,7 +76,8 @@ async function initDatabase(retries = 5, delayMs = 3e3) {
             currency VARCHAR(10) DEFAULT 'DKK',
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
-
+      `);
+      await client.query(`
         CREATE TABLE IF NOT EXISTS workspace_members (
             workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
             user_id VARCHAR(64) REFERENCES users(id) ON DELETE CASCADE,
@@ -72,7 +85,8 @@ async function initDatabase(retries = 5, delayMs = 3e3) {
             joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (workspace_id, user_id)
         );
-
+      `);
+      await client.query(`
         CREATE TABLE IF NOT EXISTS categories (
             id VARCHAR(64) PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
@@ -81,7 +95,8 @@ async function initDatabase(retries = 5, delayMs = 3e3) {
             color VARCHAR(32) NOT NULL,
             type VARCHAR(20) NOT NULL CHECK (type IN ('income', 'expense'))
         );
-
+      `);
+      await client.query(`
         CREATE TABLE IF NOT EXISTS transactions (
             id VARCHAR(64) PRIMARY KEY,
             workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -99,7 +114,8 @@ async function initDatabase(retries = 5, delayMs = 3e3) {
             created_by_avatar TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
-
+      `);
+      await client.query(`
         CREATE TABLE IF NOT EXISTS budget_limits (
             id VARCHAR(64) PRIMARY KEY,
             workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -108,8 +124,8 @@ async function initDatabase(retries = 5, delayMs = 3e3) {
             limit_amount NUMERIC(14, 2) NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
-
-        -- Add columns if missing in existing database instances
+      `);
+      await client.query(`
         ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
         ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE;
         ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurring_months INT DEFAULT 1;
@@ -119,23 +135,33 @@ async function initDatabase(retries = 5, delayMs = 3e3) {
         CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
         CREATE INDEX IF NOT EXISTS idx_budget_limits_ws_month ON budget_limits(workspace_id, month);
       `);
-      client.release();
-      console.log("\u2705 PostgreSQL database schema and migrations verified successfully.");
+      isSchemaReady = true;
+      console.log("\u2705 PostgreSQL database schema verified and tables exist.");
       return true;
     } catch (error) {
-      console.error(`\u26A0\uFE0F Database connection attempt ${attempt} failed:`, error);
+      console.error(`\u26A0\uFE0F Database schema initialization attempt ${attempt} failed:`, error);
       if (attempt < retries) {
-        console.log(`\u23F3 Retrying in ${delayMs / 1e3}s...`);
+        console.log(`\u23F3 Retrying database schema setup in ${delayMs / 1e3}s...`);
         await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    } finally {
+      if (client) {
+        client.release();
       }
     }
   }
-  console.error("\u274C Could not connect to PostgreSQL after multiple retries.");
+  console.error("\u274C Could not initialize PostgreSQL schema after multiple retries.");
   return false;
 }
 
 // server/routes.ts
 var router = Router();
+router.use(async (req, res, next) => {
+  if (isDbConfigured) {
+    await ensureDatabaseReady();
+  }
+  next();
+});
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.pbkdf2Sync(password, salt, 1e4, 64, "sha512").toString("hex");

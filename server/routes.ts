@@ -1,8 +1,16 @@
 import { Router } from 'express';
 import crypto from 'crypto';
-import { pool, isDbConfigured } from './db';
+import { pool, isDbConfigured, ensureDatabaseReady } from './db';
 
 const router = Router();
+
+// Middleware: ensure database schema and tables exist before executing any DB routes
+router.use(async (req, res, next) => {
+  if (isDbConfigured) {
+    await ensureDatabaseReady();
+  }
+  next();
+});
 
 // Password Hashing Helpers
 function hashPassword(password: string): string {
