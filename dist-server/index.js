@@ -41,9 +41,13 @@ async function createAllTables() {
   let client;
   try {
     client = await pool.connect();
-    await client.query("CREATE SCHEMA IF NOT EXISTS budgetapp;");
+    try {
+      await client.query("CREATE SCHEMA IF NOT EXISTS budgetapp;");
+      await client.query("SET search_path TO budgetapp, public;");
+    } catch {
+    }
     const statements = [
-      `CREATE TABLE IF NOT EXISTS budgetapp.users (
+      `CREATE TABLE IF NOT EXISTS users (
           id VARCHAR(64) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           email VARCHAR(255) UNIQUE NOT NULL,
@@ -51,7 +55,7 @@ async function createAllTables() {
           avatar TEXT,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
-      `CREATE TABLE IF NOT EXISTS budgetapp.workspaces (
+      `CREATE TABLE IF NOT EXISTS workspaces (
           id VARCHAR(64) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           description TEXT,
@@ -59,14 +63,14 @@ async function createAllTables() {
           currency VARCHAR(10) DEFAULT 'DKK',
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
-      `CREATE TABLE IF NOT EXISTS budgetapp.workspace_members (
+      `CREATE TABLE IF NOT EXISTS workspace_members (
           workspace_id VARCHAR(64),
           user_id VARCHAR(64),
           role VARCHAR(20) NOT NULL DEFAULT 'owner',
           joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           PRIMARY KEY (workspace_id, user_id)
       )`,
-      `CREATE TABLE IF NOT EXISTS budgetapp.categories (
+      `CREATE TABLE IF NOT EXISTS categories (
           id VARCHAR(64) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           name_fa VARCHAR(255),
@@ -74,7 +78,7 @@ async function createAllTables() {
           color VARCHAR(32) NOT NULL,
           type VARCHAR(20) NOT NULL
       )`,
-      `CREATE TABLE IF NOT EXISTS budgetapp.transactions (
+      `CREATE TABLE IF NOT EXISTS transactions (
           id VARCHAR(64) PRIMARY KEY,
           workspace_id VARCHAR(64),
           type VARCHAR(20) NOT NULL,
@@ -91,7 +95,7 @@ async function createAllTables() {
           created_by_avatar TEXT,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
-      `CREATE TABLE IF NOT EXISTS budgetapp.budget_limits (
+      `CREATE TABLE IF NOT EXISTS budget_limits (
           id VARCHAR(64) PRIMARY KEY,
           workspace_id VARCHAR(64),
           category_id VARCHAR(64),
@@ -99,11 +103,11 @@ async function createAllTables() {
           limit_amount NUMERIC(14, 2) NOT NULL,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
-      `ALTER TABLE budgetapp.users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
-      `ALTER TABLE budgetapp.transactions ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE`,
-      `ALTER TABLE budgetapp.transactions ADD COLUMN IF NOT EXISTS recurring_months INT DEFAULT 1`,
-      `CREATE INDEX IF NOT EXISTS idx_budgetapp_users_email ON budgetapp.users(email)`,
-      `CREATE INDEX IF NOT EXISTS idx_budgetapp_tx_ws ON budgetapp.transactions(workspace_id)`
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
+      `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE`,
+      `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurring_months INT DEFAULT 1`,
+      `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
+      `CREATE INDEX IF NOT EXISTS idx_tx_ws ON transactions(workspace_id)`
     ];
     for (const sql of statements) {
       await client.query(sql);
@@ -128,7 +132,7 @@ async function initDatabase(retries = 5, delayMs = 2e3) {
       console.log(`\u{1F4E1} Connecting to PostgreSQL database (Attempt ${attempt}/${retries})...`);
       const res = await createAllTables();
       if (res.success) {
-        console.log("\u2705 PostgreSQL database budgetapp schema verified and tables exist.");
+        console.log("\u2705 PostgreSQL database schema verified and tables exist.");
         return true;
       } else {
         console.error("\u26A0\uFE0F Table creation issue:", res.error);
@@ -190,7 +194,7 @@ router.post("/auth/register", async (req, res) => {
       return res.status(400).json({ error: "Name, email, and password are required" });
     }
     const emailNorm = email.trim().toLowerCase();
-    const existing = await pool.query("SELECT id FROM budgetapp.users WHERE LOWER(email) = $1", [emailNorm]);
+    const existing = await pool.query("SELECT id FROM users WHERE LOWER(email) = $1", [emailNorm]);
     if (existing.rows.length > 0) {
       return res.status(400).json({ error: "EMAIL_EXISTS", message: "An account with this email already exists" });
     }
@@ -198,18 +202,18 @@ router.post("/auth/register", async (req, res) => {
     const pwdHash = hashPassword(password);
     const avatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`;
     await pool.query(
-      `INSERT INTO budgetapp.users (id, name, email, password_hash, avatar)
+      `INSERT INTO users (id, name, email, password_hash, avatar)
        VALUES ($1, $2, $3, $4, $5)`,
       [userId, name.trim(), emailNorm, pwdHash, avatar]
     );
     const wsId = `ws_${Date.now()}`;
     await pool.query(
-      `INSERT INTO budgetapp.workspaces (id, name, description, owner_id, currency)
+      `INSERT INTO workspaces (id, name, description, owner_id, currency)
        VALUES ($1, $2, $3, $4, $5)`,
       [wsId, "Personal Wallet", "Personal finances & savings", userId, "DKK"]
     );
     await pool.query(
-      `INSERT INTO budgetapp.workspace_members (workspace_id, user_id, role)
+      `INSERT INTO workspace_members (workspace_id, user_id, role)
        VALUES ($1, $2, $3)`,
       [wsId, userId, "owner"]
     );
@@ -263,7 +267,7 @@ router.post("/auth/login", async (req, res) => {
       return res.status(400).json({ error: "Email and password are required" });
     }
     const emailNorm = email.trim().toLowerCase();
-    const userRes = await pool.query("SELECT * FROM budgetapp.users WHERE LOWER(email) = $1", [emailNorm]);
+    const userRes = await pool.query("SELECT * FROM users WHERE LOWER(email) = $1", [emailNorm]);
     if (userRes.rows.length === 0) {
       return res.status(401).json({ error: "INVALID_CREDENTIALS", message: "No account found with this email" });
     }
@@ -272,16 +276,16 @@ router.post("/auth/login", async (req, res) => {
       return res.status(401).json({ error: "INVALID_CREDENTIALS", message: "Incorrect password" });
     }
     const wsRes = await pool.query(
-      `SELECT w.* FROM budgetapp.workspaces w
-       JOIN budgetapp.workspace_members wm ON w.id = wm.workspace_id
+      `SELECT w.* FROM workspaces w
+       JOIN workspace_members wm ON w.id = wm.workspace_id
        WHERE wm.user_id = $1
        ORDER BY w.created_at ASC`,
       [userRow.id]
     );
     const membersRes = await pool.query(
       `SELECT wm.*, u.name, u.email, u.avatar 
-       FROM budgetapp.workspace_members wm 
-       LEFT JOIN budgetapp.users u ON wm.user_id = u.id`
+       FROM workspace_members wm 
+       LEFT JOIN users u ON wm.user_id = u.id`
     );
     const workspaces = wsRes.rows.map((ws) => {
       const members = membersRes.rows.filter((m) => m.workspace_id === ws.id).map((m) => ({
@@ -323,7 +327,7 @@ router.get("/transactions", async (req, res) => {
   if (!isDbConfigured) return res.json([]);
   try {
     const { workspaceId, month } = req.query;
-    let query = "SELECT * FROM budgetapp.transactions";
+    let query = "SELECT * FROM transactions";
     const params = [];
     if (workspaceId) {
       params.push(workspaceId);
@@ -365,7 +369,7 @@ router.post("/transactions", async (req, res) => {
     const { id, workspace_id, type, amount, category_id, date, note, payment_method, tags, is_recurring, recurring_months, created_by } = req.body;
     const txId = id || `tx_${Date.now()}`;
     await pool.query(
-      `INSERT INTO budgetapp.transactions (id, workspace_id, type, amount, category_id, date, note, payment_method, tags, is_recurring, recurring_months, created_by_id, created_by_name, created_by_avatar)
+      `INSERT INTO transactions (id, workspace_id, type, amount, category_id, date, note, payment_method, tags, is_recurring, recurring_months, created_by_id, created_by_name, created_by_avatar)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        ON CONFLICT (id) DO UPDATE SET
          amount = EXCLUDED.amount,
@@ -403,7 +407,7 @@ router.put("/transactions/:id", async (req, res) => {
     const { id } = req.params;
     const { type, amount, category_id, date, note, payment_method, tags } = req.body;
     await pool.query(
-      `UPDATE budgetapp.transactions 
+      `UPDATE transactions 
        SET type = COALESCE($1, type),
            amount = COALESCE($2, amount),
            category_id = COALESCE($3, category_id),
@@ -423,7 +427,7 @@ router.delete("/transactions/:id", async (req, res) => {
   if (!isDbConfigured) return res.status(400).json({ error: "Database not configured" });
   try {
     const { id } = req.params;
-    await pool.query("DELETE FROM budgetapp.transactions WHERE id = $1", [id]);
+    await pool.query("DELETE FROM transactions WHERE id = $1", [id]);
     res.json({ success: true, id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -433,11 +437,11 @@ router.get("/workspaces", async (req, res) => {
   if (!isDbConfigured) return res.json([]);
   try {
     const { userId } = req.query;
-    let query = "SELECT * FROM budgetapp.workspaces ORDER BY created_at ASC";
+    let query = "SELECT * FROM workspaces ORDER BY created_at ASC";
     const params = [];
     if (userId) {
-      query = `SELECT w.* FROM budgetapp.workspaces w
-               JOIN budgetapp.workspace_members wm ON w.id = wm.workspace_id
+      query = `SELECT w.* FROM workspaces w
+               JOIN workspace_members wm ON w.id = wm.workspace_id
                WHERE wm.user_id = $1
                ORDER BY w.created_at ASC`;
       params.push(userId);
@@ -445,8 +449,8 @@ router.get("/workspaces", async (req, res) => {
     const wsRes = await pool.query(query, params);
     const membersRes = await pool.query(
       `SELECT wm.*, u.name, u.email, u.avatar 
-       FROM budgetapp.workspace_members wm 
-       LEFT JOIN budgetapp.users u ON wm.user_id = u.id`
+       FROM workspace_members wm 
+       LEFT JOIN users u ON wm.user_id = u.id`
     );
     const workspaces = wsRes.rows.map((ws) => {
       const members = membersRes.rows.filter((m) => m.workspace_id === ws.id).map((m) => ({
@@ -478,14 +482,14 @@ router.post("/workspaces", async (req, res) => {
     const { id, name, description, owner_id, currency, members } = req.body;
     const wsId = id || `ws_${Date.now()}`;
     await pool.query(
-      `INSERT INTO budgetapp.workspaces (id, name, description, owner_id, currency)
+      `INSERT INTO workspaces (id, name, description, owner_id, currency)
        VALUES ($1, $2, $3, $4, $5)`,
       [wsId, name, description || null, owner_id, currency || "DKK"]
     );
     if (members && Array.isArray(members)) {
       for (const m of members) {
         await pool.query(
-          `INSERT INTO budgetapp.workspace_members (workspace_id, user_id, role)
+          `INSERT INTO workspace_members (workspace_id, user_id, role)
            VALUES ($1, $2, $3)
            ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
           [wsId, m.user_id, m.role]
@@ -503,7 +507,7 @@ router.post("/workspaces/:id/members", async (req, res) => {
     const { id } = req.params;
     const { user_id, role } = req.body;
     await pool.query(
-      `INSERT INTO budgetapp.workspace_members (workspace_id, user_id, role)
+      `INSERT INTO workspace_members (workspace_id, user_id, role)
        VALUES ($1, $2, $3)
        ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
       [id, user_id, role]
@@ -517,7 +521,7 @@ router.delete("/workspaces/:id/members/:userId", async (req, res) => {
   if (!isDbConfigured) return res.status(400).json({ error: "Database not configured" });
   try {
     const { id, userId } = req.params;
-    await pool.query("DELETE FROM budgetapp.workspace_members WHERE workspace_id = $1 AND user_id = $2", [id, userId]);
+    await pool.query("DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2", [id, userId]);
     res.json({ success: true, workspace_id: id, user_id: userId });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -526,7 +530,7 @@ router.delete("/workspaces/:id/members/:userId", async (req, res) => {
 router.get("/budgets", async (req, res) => {
   if (!isDbConfigured) return res.json([]);
   try {
-    const result = await pool.query("SELECT * FROM budgetapp.budget_limits");
+    const result = await pool.query("SELECT * FROM budget_limits");
     const mapped = result.rows.map((r) => ({
       id: r.id,
       workspace_id: r.workspace_id,
@@ -545,7 +549,7 @@ router.post("/budgets", async (req, res) => {
     const { id, workspace_id, category_id, month, limit_amount } = req.body;
     const bId = id || `bl_${Date.now()}`;
     await pool.query(
-      `INSERT INTO budgetapp.budget_limits (id, workspace_id, category_id, month, limit_amount)
+      `INSERT INTO budget_limits (id, workspace_id, category_id, month, limit_amount)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (id) DO UPDATE SET limit_amount = EXCLUDED.limit_amount`,
       [bId, workspace_id, category_id, month, limit_amount]

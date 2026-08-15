@@ -52,12 +52,17 @@ export async function createAllTables(): Promise<{ success: boolean; error?: str
   try {
     client = await pool.connect();
 
-    // 1. Create dedicated application schema
-    await client.query('CREATE SCHEMA IF NOT EXISTS budgetapp;');
+    // 1. Try to create custom schema if permitted, ignore if restricted by cloud DB policy
+    try {
+      await client.query('CREATE SCHEMA IF NOT EXISTS budgetapp;');
+      await client.query('SET search_path TO budgetapp, public;');
+    } catch {
+      // Silently fall back to default database schema
+    }
 
-    // 2. Create tables inside budgetapp schema
+    // 2. Create tables
     const statements = [
-      `CREATE TABLE IF NOT EXISTS budgetapp.users (
+      `CREATE TABLE IF NOT EXISTS users (
           id VARCHAR(64) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           email VARCHAR(255) UNIQUE NOT NULL,
@@ -65,7 +70,7 @@ export async function createAllTables(): Promise<{ success: boolean; error?: str
           avatar TEXT,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
-      `CREATE TABLE IF NOT EXISTS budgetapp.workspaces (
+      `CREATE TABLE IF NOT EXISTS workspaces (
           id VARCHAR(64) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           description TEXT,
@@ -73,14 +78,14 @@ export async function createAllTables(): Promise<{ success: boolean; error?: str
           currency VARCHAR(10) DEFAULT 'DKK',
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
-      `CREATE TABLE IF NOT EXISTS budgetapp.workspace_members (
+      `CREATE TABLE IF NOT EXISTS workspace_members (
           workspace_id VARCHAR(64),
           user_id VARCHAR(64),
           role VARCHAR(20) NOT NULL DEFAULT 'owner',
           joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           PRIMARY KEY (workspace_id, user_id)
       )`,
-      `CREATE TABLE IF NOT EXISTS budgetapp.categories (
+      `CREATE TABLE IF NOT EXISTS categories (
           id VARCHAR(64) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           name_fa VARCHAR(255),
@@ -88,7 +93,7 @@ export async function createAllTables(): Promise<{ success: boolean; error?: str
           color VARCHAR(32) NOT NULL,
           type VARCHAR(20) NOT NULL
       )`,
-      `CREATE TABLE IF NOT EXISTS budgetapp.transactions (
+      `CREATE TABLE IF NOT EXISTS transactions (
           id VARCHAR(64) PRIMARY KEY,
           workspace_id VARCHAR(64),
           type VARCHAR(20) NOT NULL,
@@ -105,7 +110,7 @@ export async function createAllTables(): Promise<{ success: boolean; error?: str
           created_by_avatar TEXT,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
-      `CREATE TABLE IF NOT EXISTS budgetapp.budget_limits (
+      `CREATE TABLE IF NOT EXISTS budget_limits (
           id VARCHAR(64) PRIMARY KEY,
           workspace_id VARCHAR(64),
           category_id VARCHAR(64),
@@ -113,11 +118,11 @@ export async function createAllTables(): Promise<{ success: boolean; error?: str
           limit_amount NUMERIC(14, 2) NOT NULL,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
-      `ALTER TABLE budgetapp.users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
-      `ALTER TABLE budgetapp.transactions ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE`,
-      `ALTER TABLE budgetapp.transactions ADD COLUMN IF NOT EXISTS recurring_months INT DEFAULT 1`,
-      `CREATE INDEX IF NOT EXISTS idx_budgetapp_users_email ON budgetapp.users(email)`,
-      `CREATE INDEX IF NOT EXISTS idx_budgetapp_tx_ws ON budgetapp.transactions(workspace_id)`
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
+      `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE`,
+      `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurring_months INT DEFAULT 1`,
+      `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
+      `CREATE INDEX IF NOT EXISTS idx_tx_ws ON transactions(workspace_id)`
     ];
 
     for (const sql of statements) {
@@ -147,7 +152,7 @@ export async function initDatabase(retries = 5, delayMs = 2000): Promise<boolean
       console.log(`📡 Connecting to PostgreSQL database (Attempt ${attempt}/${retries})...`);
       const res = await createAllTables();
       if (res.success) {
-        console.log('✅ PostgreSQL database budgetapp schema verified and tables exist.');
+        console.log('✅ PostgreSQL database schema verified and tables exist.');
         return true;
       } else {
         console.error('⚠️ Table creation issue:', res.error);
