@@ -15,16 +15,19 @@ import {
   Check,
   Plus,
   LogOut,
+  UserCheck,
 } from 'lucide-react';
 
 interface NavbarProps {
   onOpenShareModal: () => void;
   onOpenWorkspaceModal: () => void;
+  onNavigateToMembers?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   onOpenShareModal,
   onOpenWorkspaceModal,
+  onNavigateToMembers,
 }) => {
   const {
     currentUser,
@@ -200,18 +203,14 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right Side: Quick Toggles (Share, Language/Calendar, Theme, User) */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Share & Members Button */}
+          {/* Share Button (Desktop Quick Action) */}
           <button
             onClick={onOpenShareModal}
-            className="relative flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 text-xs sm:text-sm font-semibold transition-all border border-indigo-200/50 dark:border-indigo-800/50"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 text-xs sm:text-sm font-semibold transition-all border border-indigo-200/50 dark:border-indigo-800/50"
             title={t('manage_members')}
           >
             <Users className="w-4 h-4" />
-            <span className="hidden md:inline">{t('share_button')}</span>
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
+            <span>{t('share_button')}</span>
           </button>
 
           {/* Language & Calendar Toggle Dropdown */}
@@ -306,7 +305,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
           </button>
 
-          {/* User Profile Menu with Logout */}
+          {/* User Profile Menu with Management & Logout */}
           <div className="relative" ref={userRef}>
             <button
               onClick={() => setUserMenuOpen(!userMenuOpen)}
@@ -321,7 +320,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             {userMenuOpen && (
-              <div className="absolute end-0 mt-2 w-64 glass-modal rounded-2xl p-3 z-50 animate-in fade-in zoom-in-95">
+              <div className="absolute end-0 mt-2 w-64 glass-modal rounded-2xl p-3 z-50 animate-in fade-in zoom-in-95 space-y-2">
                 {/* Active User Header */}
                 <div className="flex items-center gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
                   <img
@@ -349,14 +348,32 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 </div>
 
+                {/* Management Option: Members & Permissions Management */}
+                <div className="space-y-1 pt-1">
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      if (onNavigateToMembers) {
+                        onNavigateToMembers();
+                      } else {
+                        onOpenShareModal();
+                      }
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                  >
+                    <UserCheck className="w-4 h-4 text-indigo-500" />
+                    <span>{language === 'fa' ? 'مدیریت اعضا و اشتراک‌گذاری' : 'Manage Members & Access'}</span>
+                  </button>
+                </div>
+
                 {/* Log Out Button */}
-                <div className="mt-3">
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
                   <button
                     onClick={() => {
                       setUserMenuOpen(false);
                       logout();
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
                   >
                     <LogOut className="w-4 h-4" />
                     <span>{t('logout')}</span>

@@ -110,6 +110,7 @@ const MainLayout: React.FC = () => {
       <Navbar
         onOpenShareModal={() => setShareModalOpen(true)}
         onOpenWorkspaceModal={() => setWorkspaceModalOpen(true)}
+        onNavigateToMembers={() => setActiveTab('members')}
       />
 
       {/* PWA / iOS Install Notification Banner */}
