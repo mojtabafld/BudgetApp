@@ -1,96 +1,80 @@
 import React from 'react';
-import type { LucideIcon } from 'lucide-react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
 interface StatCardProps {
   title: string;
   amount: string;
   subtitle?: string;
-  icon: LucideIcon;
   trend?: {
-    value: string;
+    value: number;
     isPositive: boolean;
   };
-  variant?: 'primary' | 'success' | 'danger' | 'warning' | 'default';
+  variant?: 'default' | 'income' | 'expense' | 'savings';
+  icon?: React.ElementType;
 }
 
 export const StatCard: React.FC<StatCardProps> = ({
   title,
   amount,
   subtitle,
-  icon: Icon,
   trend,
   variant = 'default',
+  icon: Icon,
 }) => {
-  const getVariantStyles = () => {
+  const getBadgeStyle = () => {
     switch (variant) {
-      case 'primary':
-        return {
-          iconBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20',
-          glow: 'hover:shadow-glow',
-        };
-      case 'success':
-        return {
-          iconBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
-          glow: 'hover:shadow-glow-success',
-        };
-      case 'danger':
-        return {
-          iconBg: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
-          glow: 'hover:shadow-glow-danger',
-        };
-      case 'warning':
-        return {
-          iconBg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
-          glow: '',
-        };
+      case 'income':
+        return 'text-[var(--color-success)] bg-[var(--color-success-subtle)] border-[var(--color-success)]/20';
+      case 'expense':
+        return 'text-[var(--color-danger)] bg-[var(--color-danger-subtle)] border-[var(--color-danger)]/20';
+      case 'savings':
+        return 'text-[var(--color-accent)] bg-[var(--color-accent-subtle)] border-[var(--color-accent)]/20';
       default:
-        return {
-          iconBg: 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20',
-          glow: '',
-        };
+        return 'text-[var(--color-ink-2)] bg-[var(--color-paper-3)] border-[var(--color-rule)]';
     }
   };
 
-  const styles = getVariantStyles();
-
   return (
-    <div
-      className={`glass-card glass-card-hover rounded-3xl p-5 relative overflow-hidden flex flex-col justify-between ${styles.glow}`}
-    >
-      {/* Top Row: Title & Icon */}
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 tracking-wide">
+    <div className="hallmark-card p-5 sm:p-6 flex flex-col justify-between space-y-4">
+      {/* Top Header */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold text-[var(--color-ink-2)] uppercase tracking-wider">
           {title}
         </span>
-        <div className={`p-2.5 rounded-2xl border ${styles.iconBg}`}>
-          <Icon className="w-5 h-5" />
-        </div>
+        {Icon && (
+          <div className={`p-2 rounded-xl border ${getBadgeStyle()}`}>
+            <Icon className="w-4 h-4" />
+          </div>
+        )}
       </div>
 
-      {/* Middle Row: Amount */}
-      <div className="my-1">
-        <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+      {/* Main Metric Value (Tabular Numeric Display) */}
+      <div className="space-y-1">
+        <div className="text-2xl sm:text-3xl font-extrabold text-[var(--color-ink)] tracking-tight tabular-nums">
           {amount}
         </div>
+        {subtitle && (
+          <p className="text-xs text-[var(--color-ink-2)] font-medium">
+            {subtitle}
+          </p>
+        )}
       </div>
 
-      {/* Bottom Row: Subtitle / Trend */}
-      {(subtitle || trend) && (
-        <div className="flex items-center gap-2 mt-2 text-xs">
-          {trend && (
-            <span
-              className={`flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full ${
-                trend.isPositive
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-              }`}
-            >
-              {trend.isPositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-              {trend.value}
+      {/* Trend Indicator */}
+      {trend && (
+        <div className="pt-2 border-t border-[var(--color-rule)] flex items-center gap-1.5 text-xs font-semibold">
+          {trend.isPositive ? (
+            <span className="flex items-center gap-1 text-[var(--color-success)]">
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>+{trend.value}%</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-[var(--color-danger)]">
+              <TrendingDown className="w-3.5 h-3.5" />
+              <span>-{trend.value}%</span>
             </span>
           )}
-          {subtitle && <span className="text-slate-400 dark:text-slate-500 truncate">{subtitle}</span>}
+          <span className="text-[var(--color-ink-3)] text-[11px]">vs. last month</span>
         </div>
       )}
     </div>

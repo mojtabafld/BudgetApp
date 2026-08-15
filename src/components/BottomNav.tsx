@@ -1,13 +1,14 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import type { NavTab } from './Sidebar';
 import {
   LayoutDashboard,
   Receipt,
   PieChart,
   Target,
+  Users,
   Plus,
 } from 'lucide-react';
+import type { NavTab } from './Sidebar';
 
 interface BottomNavProps {
   activeTab: NavTab;
@@ -20,78 +21,73 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   setActiveTab,
   onOpenTransactionModal,
 }) => {
-  const { t, canEdit } = useApp();
+  const { t, isViewerOnly } = useApp();
+
+  const navItems: { id: NavTab; label: string; icon: React.ElementType }[] = [
+    { id: 'dashboard', label: t('nav_dashboard'), icon: LayoutDashboard },
+    { id: 'transactions', label: t('nav_transactions'), icon: Receipt },
+    { id: 'analytics', label: t('nav_analytics'), icon: PieChart },
+    { id: 'budgets', label: t('nav_budgets'), icon: Target },
+    { id: 'members', label: t('nav_members'), icon: Users },
+  ];
 
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 glass-card border-t border-slate-200/80 dark:border-slate-800/80 px-2 py-1.5 safe-bottom">
-      <div className="flex items-center justify-around relative">
-        {/* Dashboard */}
-        <button
-          onClick={() => setActiveTab('dashboard')}
-          className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition-all ${
-            activeTab === 'dashboard'
-              ? 'text-indigo-600 dark:text-indigo-400 font-bold'
-              : 'text-slate-500 dark:text-slate-400 font-normal'
-          }`}
-        >
-          <LayoutDashboard className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px]">{t('nav_dashboard')}</span>
-        </button>
+    <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-[var(--color-paper-2)] border-t border-[var(--color-rule)] px-3 py-1.5 safe-bottom">
+      <div className="flex items-center justify-around">
+        {navItems.map((item, idx) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
 
-        {/* Transactions */}
-        <button
-          onClick={() => setActiveTab('transactions')}
-          className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition-all ${
-            activeTab === 'transactions'
-              ? 'text-indigo-600 dark:text-indigo-400 font-bold'
-              : 'text-slate-500 dark:text-slate-400 font-normal'
-          }`}
-        >
-          <Receipt className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px]">{t('nav_transactions')}</span>
-        </button>
+          // Place Quick Add Button in the middle
+          if (idx === 2) {
+            return (
+              <React.Fragment key="center_group">
+                <button
+                  type="button"
+                  onClick={onOpenTransactionModal}
+                  disabled={isViewerOnly}
+                  className={`-mt-6 w-12 h-12 rounded-full flex items-center justify-center text-white shadow-lg transition-transform active:scale-95 ${
+                    isViewerOnly
+                      ? 'bg-[var(--color-paper-3)] text-[var(--color-ink-3)] cursor-not-allowed'
+                      : 'bg-[var(--color-accent)]'
+                  }`}
+                  aria-label="Add transaction"
+                >
+                  <Plus className="w-6 h-6" />
+                </button>
 
-        {/* Center Floating Action Button (+) */}
-        <div className="-mt-6">
-          <button
-            onClick={onOpenTransactionModal}
-            disabled={!canEdit}
-            className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 ${
-              canEdit
-                ? 'bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white shadow-indigo-500/40 ring-4 ring-white dark:ring-slate-900'
-                : 'bg-slate-300 dark:bg-slate-700 text-slate-500 cursor-not-allowed shadow-none'
-            }`}
-            title={canEdit ? t('add_transaction') : t('role_viewer_badge')}
-          >
-            <Plus className="w-6 h-6" />
-          </button>
-        </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab(item.id)}
+                  className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl transition-all ${
+                    isActive
+                      ? 'text-[var(--color-accent)] font-bold'
+                      : 'text-[var(--color-ink-3)] hover:text-[var(--color-ink)]'
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span className="text-[10px] tracking-tight">{item.label}</span>
+                </button>
+              </React.Fragment>
+            );
+          }
 
-        {/* Analytics */}
-        <button
-          onClick={() => setActiveTab('analytics')}
-          className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition-all ${
-            activeTab === 'analytics'
-              ? 'text-indigo-600 dark:text-indigo-400 font-bold'
-              : 'text-slate-500 dark:text-slate-400 font-normal'
-          }`}
-        >
-          <PieChart className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px]">{t('nav_analytics')}</span>
-        </button>
-
-        {/* Budgets / Targets */}
-        <button
-          onClick={() => setActiveTab('budgets')}
-          className={`flex flex-col items-center py-1 px-2.5 rounded-xl transition-all ${
-            activeTab === 'budgets'
-              ? 'text-indigo-600 dark:text-indigo-400 font-bold'
-              : 'text-slate-500 dark:text-slate-400 font-normal'
-          }`}
-        >
-          <Target className="w-5 h-5 mb-0.5" />
-          <span className="text-[10px]">{t('nav_budgets')}</span>
-        </button>
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setActiveTab(item.id)}
+              className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl transition-all ${
+                isActive
+                  ? 'text-[var(--color-accent)] font-bold'
+                  : 'text-[var(--color-ink-3)] hover:text-[var(--color-ink)]'
+              }`}
+            >
+              <Icon className="w-5 h-5" />
+              <span className="text-[10px] tracking-tight">{item.label}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

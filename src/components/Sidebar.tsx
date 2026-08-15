@@ -6,9 +6,9 @@ import {
   PieChart,
   Target,
   Users,
-  Sparkles,
   PlusCircle,
   Eye,
+  Smartphone,
 } from 'lucide-react';
 
 export type NavTab = 'dashboard' | 'transactions' | 'analytics' | 'budgets' | 'members';
@@ -37,15 +37,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside className="hidden lg:flex flex-col w-64 glass-card border-r border-slate-200/80 dark:border-slate-800/80 p-4 gap-6 shrink-0 h-[calc(100vh-61px)] sticky top-[61px]">
-      {/* Quick Add Action Button (disabled if viewer only) */}
+    <aside className="hidden lg:flex flex-col w-64 border-r border-[var(--color-rule)] bg-[var(--color-paper)] p-5 gap-6 shrink-0 h-[calc(100vh-61px)] sticky top-[61px]">
+      {/* Quick Add Action Button */}
       <button
         onClick={onOpenTransactionModal}
         disabled={isViewerOnly}
-        className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl font-bold text-sm shadow-lg transition-all ${
+        className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-full font-bold text-xs uppercase tracking-wider transition-all ${
           isViewerOnly
-            ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed shadow-none'
-            : 'bg-gradient-to-r from-indigo-600 via-indigo-500 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-indigo-500/25 active:scale-[0.98]'
+            ? 'bg-[var(--color-paper-3)] text-[var(--color-ink-3)] cursor-not-allowed'
+            : 'hallmark-btn-primary'
         }`}
         title={isViewerOnly ? t('role_viewer_warning') : t('add_transaction')}
       >
@@ -56,14 +56,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </>
         ) : (
           <>
-            <PlusCircle className="w-5 h-5" />
+            <PlusCircle className="w-4 h-4" />
             <span>{t('add_transaction')}</span>
           </>
         )}
       </button>
 
-      {/* Main Navigation Links */}
-      <nav className="flex-1 space-y-1.5">
+      {/* Navigation Links */}
+      <nav className="flex-1 space-y-1">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -71,15 +71,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-sm font-semibold transition-all ${
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
                 isActive
-                  ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200'
+                  ? 'bg-[var(--color-paper-3)] text-[var(--color-accent)] font-bold shadow-sm'
+                  : 'text-[var(--color-ink-2)] hover:bg-[var(--color-paper-2)] hover:text-[var(--color-ink)]'
               }`}
             >
               <Icon
-                className={`w-5 h-5 transition-transform ${
-                  isActive ? 'text-indigo-600 dark:text-indigo-400 scale-110' : 'text-slate-400'
+                className={`w-4 h-4 ${
+                  isActive ? 'text-[var(--color-accent)]' : 'text-[var(--color-ink-3)]'
                 }`}
               />
               <span>{item.label}</span>
@@ -88,21 +88,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </nav>
 
-      {/* Footer Pro / Tips Card */}
+      {/* PWA Install Footer Badge */}
       <button
         onClick={onOpenInstallGuide}
-        className="w-full p-3.5 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-emerald-500/10 hover:from-indigo-500/20 hover:to-emerald-500/20 border border-indigo-500/20 text-start transition-all cursor-pointer group"
+        className="w-full p-3.5 rounded-2xl bg-[var(--color-paper-2)] border border-[var(--color-rule)] hover:border-[var(--color-accent)] text-start transition-all cursor-pointer group"
       >
-        <div className="flex items-center justify-between text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-1">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4" />
-            <span>Budget Master PWA</span>
+        <div className="flex items-center justify-between text-xs font-bold text-[var(--color-ink)] mb-1">
+          <div className="flex items-center gap-1.5">
+            <Smartphone className="w-4 h-4 text-[var(--color-accent)]" />
+            <span>Budget Master</span>
           </div>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
-            iOS / PWA
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--color-accent-subtle)] text-[var(--color-accent)] font-extrabold">
+            PWA / iOS
           </span>
         </div>
-        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+        <p className="text-[11px] text-[var(--color-ink-2)] leading-relaxed">
           {t('install_desc')}
         </p>
       </button>

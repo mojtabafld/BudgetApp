@@ -1,61 +1,162 @@
 @import "tailwindcss";
 
-@layer base {
-  :root {
-    --font-inter: 'Inter', system-ui, sans-serif;
-    --font-vazir: 'Vazirmatn', system-ui, sans-serif;
-  }
+/* Hallmark · genre: modern-minimal · macrostructure: Workbench · theme: Cobalt · design-system: design.md · designed-as-app */
+
+:root {
+  /* Light Theme Tokens (Modern Minimalist Precision Canvas) */
+  --color-paper: oklch(99% 0.002 260);
+  --color-paper-2: oklch(97% 0.004 260);
+  --color-paper-3: oklch(93% 0.008 260);
+  --color-ink: oklch(16% 0.015 260);
+  --color-ink-2: oklch(46% 0.012 260);
+  --color-ink-3: oklch(65% 0.008 260);
+  --color-rule: oklch(89% 0.006 260);
+  --color-rule-subtle: oklch(93% 0.004 260);
   
-  body {
-    font-family: var(--font-inter);
-    @apply antialiased overflow-x-hidden transition-colors duration-200;
-  }
-  
-  [dir="rtl"] {
-    font-family: var(--font-vazir);
-  }
+  --color-accent: oklch(52% 0.22 265);
+  --color-accent-ink: oklch(99% 0 0);
+  --color-accent-subtle: oklch(95% 0.04 265);
+  --color-focus: oklch(56% 0.20 265);
 
-  [dir="ltr"] {
-    font-family: var(--font-inter);
-  }
+  --color-success: oklch(60% 0.16 155);
+  --color-success-subtle: oklch(95% 0.04 155);
+  --color-danger: oklch(56% 0.20 25);
+  --color-danger-subtle: oklch(95% 0.04 25);
+  --color-warning: oklch(68% 0.16 75);
+  --color-warning-subtle: oklch(95% 0.04 75);
+
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-persian: "Vazirmatn", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-short: 180ms;
+  --dur-med: 280ms;
+
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-pill: 9999px;
+
+  --shadow-subtle: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 3px 1px rgba(0, 0, 0, 0.02);
+  --shadow-card: 0 2px 8px -2px rgba(0, 0, 0, 0.05), 0 1px 3px -1px rgba(0, 0, 0, 0.03);
+  --shadow-elevated: 0 12px 24px -6px rgba(0, 0, 0, 0.08), 0 4px 8px -2px rgba(0, 0, 0, 0.03);
 }
 
-/* Custom Glassmorphism & Visual Polish */
-.glass-card {
-  @apply bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800/80 shadow-sm transition-all duration-200;
+.dark {
+  /* Dark Theme Tokens (Obsidian Technical Workbench) */
+  --color-paper: oklch(13% 0.012 260);
+  --color-paper-2: oklch(17% 0.015 260);
+  --color-paper-3: oklch(22% 0.018 260);
+  --color-ink: oklch(96% 0.005 260);
+  --color-ink-2: oklch(68% 0.012 260);
+  --color-ink-3: oklch(48% 0.010 260);
+  --color-rule: oklch(25% 0.012 260);
+  --color-rule-subtle: oklch(20% 0.008 260);
+
+  --color-accent: oklch(64% 0.20 265);
+  --color-accent-ink: oklch(99% 0 0);
+  --color-accent-subtle: oklch(20% 0.06 265);
+  --color-focus: oklch(68% 0.18 265);
+
+  --color-success: oklch(70% 0.16 155);
+  --color-success-subtle: oklch(20% 0.05 155);
+  --color-danger: oklch(66% 0.20 25);
+  --color-danger-subtle: oklch(20% 0.06 25);
+  --color-warning: oklch(74% 0.15 75);
+  --color-warning-subtle: oklch(20% 0.05 75);
+
+  --shadow-subtle: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 4px 12px -2px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-elevated: 0 20px 32px -8px rgba(0, 0, 0, 0.7), 0 8px 16px -4px rgba(0, 0, 0, 0.5);
 }
 
-.glass-card-hover {
-  @apply hover:shadow-md hover:border-indigo-500/30 dark:hover:border-indigo-500/30 transition-all duration-200;
+html, body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  overflow-x: clip;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.glass-modal {
-  @apply bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-slate-200 dark:border-slate-800 shadow-2xl;
+[dir="rtl"] body {
+  font-family: var(--font-persian), var(--font-body);
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Tabular Financial Figures */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+/* Precision Component Styles */
+.hallmark-card {
+  background-color: var(--color-paper-2);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+  transition: border-color var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out);
 }
 
-::-webkit-scrollbar-thumb {
-  @apply bg-slate-300 dark:bg-slate-700 rounded-full;
+.hallmark-card:hover {
+  border-color: var(--color-accent);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-400 dark:bg-slate-600;
+.hallmark-btn-primary {
+  background-color: var(--color-accent);
+  color: var(--color-accent-ink);
+  font-weight: 700;
+  border-radius: var(--radius-pill);
+  padding: 0.625rem 1.25rem;
+  box-shadow: 0 2px 8px -1px color-mix(in srgb, var(--color-accent) 40%, transparent);
+  transition: transform var(--dur-short) var(--ease-out), opacity var(--dur-short) var(--ease-out), filter var(--dur-short) var(--ease-out);
 }
 
-/* Safe area insets for iOS devices */
+.hallmark-btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+.hallmark-btn-primary:active {
+  transform: scale(0.98);
+}
+
+.hallmark-btn-primary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.hallmark-btn-secondary {
+  background-color: var(--color-paper-2);
+  color: var(--color-ink);
+  border: 1px solid var(--color-rule);
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  padding: 0.625rem 1.25rem;
+  transition: background-color var(--dur-short) var(--ease-out), border-color var(--dur-short) var(--ease-out), transform var(--dur-short) var(--ease-out);
+}
+
+.hallmark-btn-secondary:hover {
+  background-color: var(--color-paper-3);
+  border-color: var(--color-ink-3);
+}
+
+.hallmark-btn-secondary:active {
+  transform: scale(0.98);
+}
+
+.hallmark-btn-secondary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* Safe areas for iOS native display */
 .safe-top {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: max(env(safe-area-inset-top), 0.5rem);
 }
 
 .safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: max(env(safe-area-inset-bottom), 0.75rem);
 }
