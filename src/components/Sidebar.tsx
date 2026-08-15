@@ -17,12 +17,14 @@ interface SidebarProps {
   activeTab: NavTab;
   setActiveTab: (tab: NavTab) => void;
   onOpenTransactionModal: () => void;
+  onOpenInstallGuide: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   setActiveTab,
   onOpenTransactionModal,
+  onOpenInstallGuide,
 }) => {
   const { t, isViewerOnly } = useApp();
 
@@ -87,15 +89,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* Footer Pro / Tips Card */}
-      <div className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-emerald-500/10 border border-indigo-500/20 text-start">
-        <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-1">
-          <Sparkles className="w-4 h-4" />
-          <span>Budget Master PWA</span>
+      <button
+        onClick={onOpenInstallGuide}
+        className="w-full p-3.5 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-emerald-500/10 hover:from-indigo-500/20 hover:to-emerald-500/20 border border-indigo-500/20 text-start transition-all cursor-pointer group"
+      >
+        <div className="flex items-center justify-between text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4" />
+            <span>Budget Master PWA</span>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+            iOS / PWA
+          </span>
         </div>
         <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
           {t('install_desc')}
         </p>
-      </div>
+      </button>
     </aside>
   );
 };

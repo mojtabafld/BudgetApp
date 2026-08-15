@@ -13,11 +13,12 @@ import { TransactionModal } from './components/TransactionModal';
 import { ShareModal } from './components/ShareModal';
 import { WorkspaceModal } from './components/WorkspaceModal';
 import { AuthModal } from './components/AuthModal';
+import { IOSInstallGuide } from './components/IOSInstallGuide';
 import type { Transaction, TransactionType } from './types';
-import { Download, X } from 'lucide-react';
+import { Download, X, Smartphone } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
-  const { t } = useApp();
+  const { t, language } = useApp();
 
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [transactionModalOpen, setTransactionModalOpen] = useState(false);
@@ -27,13 +28,30 @@ const MainLayout: React.FC = () => {
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [iosGuideOpen, setIosGuideOpen] = useState(false);
 
   // PWA Install prompt
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
 
   useEffect(() => {
+    // Detect iOS devices
+    const isIosDevice =
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    
+    // Check if already in standalone mode
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const isStandalone = (window.navigator as any).standalone || window.matchMedia('(display-mode: standalone)').matches;
+
+    setIsIOS(isIosDevice);
+
+    if (isIosDevice && !isStandalone) {
+      setShowInstallBanner(true);
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleBeforeInstallPrompt = (e: any) => {
       e.preventDefault();
@@ -45,7 +63,12 @@ const MainLayout: React.FC = () => {
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
-  const handleInstallPWA = async () => {
+  const handleInstallClick = async () => {
+    if (isIOS) {
+      setIosGuideOpen(true);
+      return;
+    }
+
     if (deferredPrompt) {
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
@@ -53,6 +76,8 @@ const MainLayout: React.FC = () => {
         setShowInstallBanner(false);
       }
       setDeferredPrompt(null);
+    } else {
+      setIosGuideOpen(true);
     }
   };
 
@@ -71,23 +96,29 @@ const MainLayout: React.FC = () => {
         onOpenAuthModal={() => setAuthModalOpen(true)}
       />
 
-      {/* PWA Install Notification Bar */}
+      {/* PWA / iOS Install Notification Banner */}
       {showInstallBanner && (
-        <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white px-4 py-2 text-xs sm:text-sm flex items-center justify-between shadow-md">
-          <div className="flex items-center gap-2">
-            <Download className="w-4 h-4" />
-            <span className="font-medium">{t('install_desc')}</span>
+        <div className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-emerald-600 text-white px-4 py-2.5 text-xs sm:text-sm flex items-center justify-between shadow-lg animate-in slide-in-from-top">
+          <div className="flex items-center gap-2 truncate">
+            {isIOS ? <Smartphone className="w-4 h-4 shrink-0 text-emerald-300" /> : <Download className="w-4 h-4 shrink-0" />}
+            <span className="font-semibold truncate">
+              {isIOS
+                ? language === 'fa'
+                  ? 'افزودن BudgetMaster به صفحه اصلی آیفون (مانند اپ بومی iOS)'
+                  : 'Install BudgetMaster on iPhone Home Screen (iOS Native App)'
+                : t('install_desc')}
+            </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={handleInstallPWA}
-              className="px-3 py-1 bg-white text-indigo-700 font-bold rounded-lg hover:bg-slate-100 transition-colors"
+              onClick={handleInstallClick}
+              className="px-3.5 py-1 bg-white text-indigo-700 font-bold rounded-xl hover:bg-slate-100 shadow-sm transition-all active:scale-95 text-xs"
             >
-              {t('install_btn')}
+              {isIOS ? (language === 'fa' ? 'راهنما و نصب' : 'Install (iOS)') : t('install_btn')}
             </button>
             <button
               onClick={() => setShowInstallBanner(false)}
-              className="p-1 hover:bg-indigo-800 rounded-lg transition-colors"
+              className="p-1 hover:bg-white/20 rounded-lg transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -102,6 +133,7 @@ const MainLayout: React.FC = () => {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           onOpenTransactionModal={() => handleOpenNewTransaction('expense')}
+          onOpenInstallGuide={() => setIosGuideOpen(true)}
         />
 
         {/* Dynamic Views Container */}
@@ -153,6 +185,8 @@ const MainLayout: React.FC = () => {
       />
 
       <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
+
+      <IOSInstallGuide isOpen={iosGuideOpen} onClose={() => setIosGuideOpen(false)} />
     </div>
   );
 };
