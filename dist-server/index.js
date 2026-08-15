@@ -167,13 +167,15 @@ router.get("/health", async (req, res) => {
   }
   try {
     const tableRes = await createAllTables();
-    const dbRes = await pool.query("SELECT NOW()");
+    const info = await pool.query("SELECT CURRENT_USER, CURRENT_DATABASE(), CURRENT_SCHEMA()");
     return res.json({
       status: "ok",
       database: "connected",
+      user: info.rows[0].current_user,
+      dbName: info.rows[0].current_database,
+      schema: info.rows[0].current_schema,
       tablesCreated: tableRes.success,
-      tableError: tableRes.error || null,
-      time: dbRes.rows[0].now
+      tableError: tableRes.error || null
     });
   } catch (err) {
     return res.status(500).json({ status: "error", database: "error", error: err.message });
