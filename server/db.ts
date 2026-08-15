@@ -43,16 +43,27 @@ export const pool = new Pool({
   connectionTimeoutMillis: 10000,
 });
 
+// Configure search_path on every new client in the connection pool
+pool.on('connect', async (client) => {
+  try {
+    await client.query('CREATE SCHEMA IF NOT EXISTS budgetapp;');
+    await client.query('SET search_path TO budgetapp, public;');
+  } catch {
+    try {
+      await client.query('SET search_path TO public;');
+    } catch {}
+  }
+});
+
 export const isDbConfigured = Boolean(rawConnectionString);
 
 export async function createAllTables(clientOrPool: any = pool): Promise<{ success: boolean; error?: string }> {
-  // Ensure schema permissions first
+  // 1. Create and switch to dedicated budgetapp schema owned by current DB user
   try {
-    await clientOrPool.query(`
-      CREATE SCHEMA IF NOT EXISTS public;
-    `);
+    await clientOrPool.query('CREATE SCHEMA IF NOT EXISTS budgetapp;');
+    await clientOrPool.query('SET search_path TO budgetapp, public;');
   } catch (e: any) {
-    console.log('Notice on CREATE SCHEMA:', e.message);
+    console.log('Notice on schema setup:', e.message);
   }
 
   const statements = [
@@ -119,19 +130,13 @@ export async function createAllTables(clientOrPool: any = pool): Promise<{ succe
     `CREATE INDEX IF NOT EXISTS idx_transactions_workspace ON transactions(workspace_id)`
   ];
 
-  let firstError: string | undefined;
-
   for (const sql of statements) {
     try {
       await clientOrPool.query(sql);
     } catch (err: any) {
       console.error(`SQL execute error: "${err.message}" on query: ${sql.slice(0, 40)}`);
-      if (!firstError) firstError = `${err.message} (${sql.slice(0, 35)}...)`;
+      return { success: false, error: err.message };
     }
-  }
-
-  if (firstError) {
-    return { success: false, error: firstError };
   }
 
   return { success: true };

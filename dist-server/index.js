@@ -35,14 +35,24 @@ var pool = new Pool({
   idleTimeoutMillis: 3e4,
   connectionTimeoutMillis: 1e4
 });
+pool.on("connect", async (client) => {
+  try {
+    await client.query("CREATE SCHEMA IF NOT EXISTS budgetapp;");
+    await client.query("SET search_path TO budgetapp, public;");
+  } catch {
+    try {
+      await client.query("SET search_path TO public;");
+    } catch {
+    }
+  }
+});
 var isDbConfigured = Boolean(rawConnectionString);
 async function createAllTables(clientOrPool = pool) {
   try {
-    await clientOrPool.query(`
-      CREATE SCHEMA IF NOT EXISTS public;
-    `);
+    await clientOrPool.query("CREATE SCHEMA IF NOT EXISTS budgetapp;");
+    await clientOrPool.query("SET search_path TO budgetapp, public;");
   } catch (e) {
-    console.log("Notice on CREATE SCHEMA:", e.message);
+    console.log("Notice on schema setup:", e.message);
   }
   const statements = [
     `CREATE TABLE IF NOT EXISTS users (
@@ -107,17 +117,13 @@ async function createAllTables(clientOrPool = pool) {
     `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
     `CREATE INDEX IF NOT EXISTS idx_transactions_workspace ON transactions(workspace_id)`
   ];
-  let firstError;
   for (const sql of statements) {
     try {
       await clientOrPool.query(sql);
     } catch (err) {
       console.error(`SQL execute error: "${err.message}" on query: ${sql.slice(0, 40)}`);
-      if (!firstError) firstError = `${err.message} (${sql.slice(0, 35)}...)`;
+      return { success: false, error: err.message };
     }
-  }
-  if (firstError) {
-    return { success: false, error: firstError };
   }
   return { success: true };
 }
