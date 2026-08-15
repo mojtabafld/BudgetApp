@@ -45,9 +45,18 @@ export const pool = new Pool({
 
 export const isDbConfigured = Boolean(rawConnectionString);
 
-export async function createAllTables(clientOrPool: any = pool): Promise<boolean> {
+export async function createAllTables(clientOrPool: any = pool): Promise<{ success: boolean; error?: string }> {
+  // Ensure schema permissions first
+  try {
+    await clientOrPool.query(`
+      CREATE SCHEMA IF NOT EXISTS public;
+    `);
+  } catch (e: any) {
+    console.log('Notice on CREATE SCHEMA:', e.message);
+  }
+
   const statements = [
-    `CREATE TABLE IF NOT EXISTS public.users (
+    `CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(64) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
@@ -55,7 +64,7 @@ export async function createAllTables(clientOrPool: any = pool): Promise<boolean
         avatar TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )`,
-    `CREATE TABLE IF NOT EXISTS public.workspaces (
+    `CREATE TABLE IF NOT EXISTS workspaces (
         id VARCHAR(64) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         description TEXT,
@@ -63,14 +72,14 @@ export async function createAllTables(clientOrPool: any = pool): Promise<boolean
         currency VARCHAR(10) DEFAULT 'DKK',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )`,
-    `CREATE TABLE IF NOT EXISTS public.workspace_members (
+    `CREATE TABLE IF NOT EXISTS workspace_members (
         workspace_id VARCHAR(64),
         user_id VARCHAR(64),
         role VARCHAR(20) NOT NULL DEFAULT 'owner',
         joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (workspace_id, user_id)
     )`,
-    `CREATE TABLE IF NOT EXISTS public.categories (
+    `CREATE TABLE IF NOT EXISTS categories (
         id VARCHAR(64) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         name_fa VARCHAR(255),
@@ -78,7 +87,7 @@ export async function createAllTables(clientOrPool: any = pool): Promise<boolean
         color VARCHAR(32) NOT NULL,
         type VARCHAR(20) NOT NULL
     )`,
-    `CREATE TABLE IF NOT EXISTS public.transactions (
+    `CREATE TABLE IF NOT EXISTS transactions (
         id VARCHAR(64) PRIMARY KEY,
         workspace_id VARCHAR(64),
         type VARCHAR(20) NOT NULL,
@@ -95,7 +104,7 @@ export async function createAllTables(clientOrPool: any = pool): Promise<boolean
         created_by_avatar TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )`,
-    `CREATE TABLE IF NOT EXISTS public.budget_limits (
+    `CREATE TABLE IF NOT EXISTS budget_limits (
         id VARCHAR(64) PRIMARY KEY,
         workspace_id VARCHAR(64),
         category_id VARCHAR(64),
@@ -103,21 +112,29 @@ export async function createAllTables(clientOrPool: any = pool): Promise<boolean
         limit_amount NUMERIC(14, 2) NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     )`,
-    `ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
-    `ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE`,
-    `ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS recurring_months INT DEFAULT 1`,
-    `CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email)`,
-    `CREATE INDEX IF NOT EXISTS idx_transactions_workspace ON public.transactions(workspace_id)`
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
+    `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE`,
+    `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurring_months INT DEFAULT 1`,
+    `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_workspace ON transactions(workspace_id)`
   ];
+
+  let firstError: string | undefined;
 
   for (const sql of statements) {
     try {
       await clientOrPool.query(sql);
     } catch (err: any) {
-      console.error('Schema statement notice:', err.message);
+      console.error(`SQL execute error: "${err.message}" on query: ${sql.slice(0, 40)}`);
+      if (!firstError) firstError = `${err.message} (${sql.slice(0, 35)}...)`;
     }
   }
-  return true;
+
+  if (firstError) {
+    return { success: false, error: firstError };
+  }
+
+  return { success: true };
 }
 
 // Auto-migration & Schema Verification
@@ -133,12 +150,16 @@ export async function initDatabase(retries = 5, delayMs = 2000): Promise<boolean
       const client = await pool.connect();
       console.log('✅ Successfully connected to PostgreSQL database (DigitalOcean Dev DB)!');
 
-      await createAllTables(client);
+      const res = await createAllTables(client);
       client.release();
-      console.log('✅ PostgreSQL database schema verified and public tables exist.');
-      return true;
-    } catch (error) {
-      console.error(`⚠️ Database connection attempt ${attempt} failed:`, error);
+      if (res.success) {
+        console.log('✅ PostgreSQL database schema verified and tables exist.');
+        return true;
+      } else {
+        console.error('⚠️ Table creation issue:', res.error);
+      }
+    } catch (error: any) {
+      console.error(`⚠️ Database connection attempt ${attempt} failed:`, error.message);
       if (attempt < retries) {
         console.log(`⏳ Retrying database schema setup in ${delayMs / 1000}s...`);
         await new Promise((resolve) => setTimeout(resolve, delayMs));
