@@ -1,34 +1,40 @@
-# Stage 1: Build Frontend
+# Stage 1: Build Application (Frontend + Server)
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy dependency manifests
+# Copy package manifests
 COPY package*.json ./
 
-# Install all dependencies
+# Install all dependencies (including devDependencies for build)
 RUN npm ci
 
 # Copy source code
 COPY . .
 
-# Build production bundle with Vite
+# Build Vite PWA frontend and backend server bundle
 RUN npm run build
 
-# Stage 2: Production Nginx Server
-FROM nginx:alpine AS runner
+# Stage 2: Production Lightweight Runner
+FROM node:20-alpine AS runner
 
-# Remove default nginx html
-RUN rm -rf /usr/share/nginx/html/*
+WORKDIR /app
 
-# Copy build output from builder stage
-COPY --from=builder /app/dist /usr/share/nginx/html
+ENV NODE_ENV=production
+ENV PORT=80
 
-# Copy custom Nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy package manifests
+COPY package*.json ./
 
-# Expose port 80
+# Install only production dependencies
+RUN npm ci --omit=dev
+
+# Copy build artifacts from builder
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/dist-server ./dist-server
+
+# Expose standard container port
 EXPOSE 80
 
-# Run nginx in foreground
-CMD ["nginx", "-g", "daemon off;"]
+# Run production server connected to PostgreSQL & serving PWA
+CMD ["node", "dist-server/index.js"]

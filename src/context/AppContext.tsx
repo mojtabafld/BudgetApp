@@ -12,6 +12,7 @@ import type {
   UserRole,
 } from '../types';
 import { StorageService } from '../utils/storage';
+import { ApiService } from '../utils/api';
 import { getCurrentMonthKey } from '../utils/date';
 import { translations } from '../utils/i18n';
 import confetti from 'canvas-confetti';
@@ -25,6 +26,7 @@ interface AppContextType {
   currentUserRole: UserRole;
   canEdit: boolean;
   isViewerOnly: boolean;
+  isDbOnline: boolean;
 
   // Preferences
   language: Language;
@@ -80,6 +82,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(() => StorageService.getActiveWorkspaceId());
   const [transactions, setTransactions] = useState<Transaction[]>(() => StorageService.getTransactions());
   const [budgetLimits, setBudgetLimits] = useState<BudgetLimit[]>(() => StorageService.getBudgetLimits());
+  const [isDbOnline, setIsDbOnline] = useState<boolean>(false);
 
   // Preferences: Default to English and Gregorian as requested
   const [language, setLanguageState] = useState<Language>(() => {
@@ -95,6 +98,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentMonthKey());
+
+  // Fetch initial data from backend PostgreSQL database if available
+  useEffect(() => {
+    async function syncWithDatabase() {
+      const health = await ApiService.checkHealth();
+      if (health.database === 'connected') {
+        setIsDbOnline(true);
+        console.log('🔗 PostgreSQL database active. Syncing latest data...');
+
+        const [remoteTxs, remoteWs, remoteBudgets, remoteUsers] = await Promise.all([
+          ApiService.getTransactions(),
+          ApiService.getWorkspaces(),
+          ApiService.getBudgets(),
+          ApiService.getUsers(),
+        ]);
+
+        if (remoteTxs && remoteTxs.length > 0) {
+          setTransactions(remoteTxs);
+          StorageService.saveTransactions(remoteTxs);
+        }
+        if (remoteWs && remoteWs.length > 0) {
+          setWorkspaces(remoteWs);
+          StorageService.saveWorkspaces(remoteWs);
+        }
+        if (remoteBudgets && remoteBudgets.length > 0) {
+          setBudgetLimits(remoteBudgets);
+          StorageService.saveBudgetLimits(remoteBudgets);
+        }
+        if (remoteUsers && remoteUsers.length > 0) {
+          setUsers(remoteUsers);
+          localStorage.setItem('budgetmaster_users_v1', JSON.stringify(remoteUsers));
+        }
+      }
+    }
+    syncWithDatabase();
+  }, []);
 
   // Find Current User
   const currentUser = useMemo(() => {
@@ -172,6 +211,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updatedUsers = [...users, newUser];
     setUsers(updatedUsers);
     localStorage.setItem('budgetmaster_users_v1', JSON.stringify(updatedUsers));
+    ApiService.saveUser(newUser);
     switchUser(newUser.id);
   };
 
@@ -182,7 +222,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Create Workspace
-  const createWorkspace = (name: string, description?: string, curr: CurrencyCode = 'USD'): Workspace => {
+  const createWorkspace = (name: string, description?: string, curr: CurrencyCode = 'DKK'): Workspace => {
     const newWs: Workspace = {
       id: `ws_${Date.now()}`,
       name,
@@ -204,6 +244,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = [...workspaces, newWs];
     setWorkspaces(updated);
     StorageService.saveWorkspaces(updated);
+    ApiService.createWorkspace(newWs);
     switchWorkspace(newWs.id);
     return newWs;
   };
@@ -217,7 +258,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     if (!targetUser) {
-      // Create invited user stub
       targetUser = {
         id: `user_${Date.now()}`,
         name: emailOrName.split('@')[0],
@@ -228,12 +268,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updatedUsers = [...users, targetUser];
       setUsers(updatedUsers);
       localStorage.setItem('budgetmaster_users_v1', JSON.stringify(updatedUsers));
+      ApiService.saveUser(targetUser);
     }
 
-    // Check if already in workspace
     const existingMember = activeWorkspace.members.find((m) => m.user_id === targetUser!.id);
     if (existingMember) {
-      // Update role
       updateMemberRole(targetUser.id, role);
       return true;
     }
@@ -259,6 +298,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setWorkspaces(updatedWorkspaces);
     StorageService.saveWorkspaces(updatedWorkspaces);
+    ApiService.addMember(activeWorkspace.id, targetUser.id, role);
     return true;
   };
 
@@ -276,6 +316,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     setWorkspaces(updatedWorkspaces);
     StorageService.saveWorkspaces(updatedWorkspaces);
+    ApiService.addMember(activeWorkspace.id, userId, role);
   };
 
   // Remove Member
@@ -327,6 +368,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = [newTx, ...transactions];
     setTransactions(updated);
     StorageService.saveTransactions(updated);
+    ApiService.createTransaction(newTx);
 
     if (data.type === 'income') {
       triggerConfetti();
@@ -340,6 +382,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = transactions.map((t) => (t.id === id ? { ...t, ...updates } : t));
     setTransactions(updated);
     StorageService.saveTransactions(updated);
+    ApiService.updateTransaction(id, updates);
     return true;
   };
 
@@ -349,6 +392,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = transactions.filter((t) => t.id !== id);
     setTransactions(updated);
     StorageService.saveTransactions(updated);
+    ApiService.deleteTransaction(id);
     return true;
   };
 
@@ -360,23 +404,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     let updated: BudgetLimit[];
+    let budgetItem: BudgetLimit;
     if (existingIndex >= 0) {
       updated = [...budgetLimits];
       updated[existingIndex].limit_amount = limitAmount;
+      budgetItem = updated[existingIndex];
     } else {
-      updated = [
-        ...budgetLimits,
-        {
-          id: `bl_${Date.now()}`,
-          workspace_id: activeWorkspace.id,
-          category_id: categoryId,
-          month: selectedMonth,
-          limit_amount: limitAmount,
-        },
-      ];
+      budgetItem = {
+        id: `bl_${Date.now()}`,
+        workspace_id: activeWorkspace.id,
+        category_id: categoryId,
+        month: selectedMonth,
+        limit_amount: limitAmount,
+      };
+      updated = [...budgetLimits, budgetItem];
     }
     setBudgetLimits(updated);
     StorageService.saveBudgetLimits(updated);
+    ApiService.saveBudget(budgetItem);
   };
 
   // Set Currency
@@ -431,6 +476,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentUserRole,
         canEdit,
         isViewerOnly,
+        isDbOnline,
         language,
         calendar,
         theme,

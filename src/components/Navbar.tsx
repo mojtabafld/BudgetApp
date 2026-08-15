@@ -38,6 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     switchWorkspace,
     currentUserRole,
     isViewerOnly,
+    isDbOnline,
     selectedMonth,
     setSelectedMonth,
     theme,
@@ -104,6 +105,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Wallet className="w-4 h-4 text-indigo-500" />
               <span className="max-w-[110px] sm:max-w-[150px] truncate">{activeWorkspace?.name}</span>
+              {isDbOnline && (
+                <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold" title="Connected to PostgreSQL Dev Database">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  DB
+                </span>
+              )}
               {isViewerOnly && (
                 <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold">
                   <Eye className="w-3 h-3" />
