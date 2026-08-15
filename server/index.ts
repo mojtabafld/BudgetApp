@@ -2,10 +2,14 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import dotenv from 'dotenv';
-import apiRouter from './routes';
-import { initDatabase } from './db';
 
 dotenv.config();
+
+// Ensure Node TLS accepts DigitalOcean self-signed certificates in private DB clusters
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+import apiRouter from './routes';
+import { initDatabase } from './db';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 8080;

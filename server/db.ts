@@ -3,29 +3,47 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Ensure Node TLS accepts DigitalOcean self-signed certificates in private DB clusters
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 const { Pool } = pg;
 
 // Get connection string from environment
-const connectionString = process.env.DATABASE_URL;
+const rawConnectionString = process.env.DATABASE_URL;
 
-// Determine if connecting to DigitalOcean or remote cloud PostgreSQL
+// Clean connection string by removing sslmode parameters that override rejectUnauthorized: false
+let cleanConnectionString = rawConnectionString;
+if (cleanConnectionString) {
+  cleanConnectionString = cleanConnectionString
+    .replace(/[?&]sslmode=[^&]+/g, '')
+    .replace(/[?&]ssl=[^&]+/g, '');
+
+  if (cleanConnectionString.endsWith('?')) {
+    cleanConnectionString = cleanConnectionString.slice(0, -1);
+  }
+}
+
 const isCloud = Boolean(
-  connectionString &&
-    (connectionString.includes('digitalocean') ||
-      connectionString.includes('ondigitalocean') ||
-      connectionString.includes('sslmode=require') ||
-      (!connectionString.includes('localhost') && !connectionString.includes('127.0.0.1')))
+  rawConnectionString &&
+    (rawConnectionString.includes('digitalocean') ||
+      rawConnectionString.includes('ondigitalocean') ||
+      rawConnectionString.includes('sslmode') ||
+      (!rawConnectionString.includes('localhost') && !rawConnectionString.includes('127.0.0.1')))
 );
 
 export const pool = new Pool({
-  connectionString: connectionString || undefined,
-  ssl: isCloud ? { rejectUnauthorized: false } : false,
+  connectionString: cleanConnectionString || undefined,
+  ssl: isCloud
+    ? {
+        rejectUnauthorized: false, // Explicitly allow DigitalOcean internal/dev certificates
+      }
+    : false,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
 });
 
-export const isDbConfigured = Boolean(connectionString);
+export const isDbConfigured = Boolean(rawConnectionString);
 
 // Auto-migration & Schema Verification
 export async function initDatabase(retries = 5, delayMs = 3000): Promise<boolean> {

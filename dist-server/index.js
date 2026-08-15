@@ -12,19 +12,30 @@ import crypto from "crypto";
 import pg from "pg";
 import dotenv from "dotenv";
 dotenv.config();
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 var { Pool } = pg;
-var connectionString = process.env.DATABASE_URL;
+var rawConnectionString = process.env.DATABASE_URL;
+var cleanConnectionString = rawConnectionString;
+if (cleanConnectionString) {
+  cleanConnectionString = cleanConnectionString.replace(/[?&]sslmode=[^&]+/g, "").replace(/[?&]ssl=[^&]+/g, "");
+  if (cleanConnectionString.endsWith("?")) {
+    cleanConnectionString = cleanConnectionString.slice(0, -1);
+  }
+}
 var isCloud = Boolean(
-  connectionString && (connectionString.includes("digitalocean") || connectionString.includes("ondigitalocean") || connectionString.includes("sslmode=require") || !connectionString.includes("localhost") && !connectionString.includes("127.0.0.1"))
+  rawConnectionString && (rawConnectionString.includes("digitalocean") || rawConnectionString.includes("ondigitalocean") || rawConnectionString.includes("sslmode") || !rawConnectionString.includes("localhost") && !rawConnectionString.includes("127.0.0.1"))
 );
 var pool = new Pool({
-  connectionString: connectionString || void 0,
-  ssl: isCloud ? { rejectUnauthorized: false } : false,
+  connectionString: cleanConnectionString || void 0,
+  ssl: isCloud ? {
+    rejectUnauthorized: false
+    // Explicitly allow DigitalOcean internal/dev certificates
+  } : false,
   max: 20,
   idleTimeoutMillis: 3e4,
   connectionTimeoutMillis: 1e4
 });
-var isDbConfigured = Boolean(connectionString);
+var isDbConfigured = Boolean(rawConnectionString);
 async function initDatabase(retries = 5, delayMs = 3e3) {
   if (!isDbConfigured) {
     console.log("\u2139\uFE0F No DATABASE_URL provided. Operating in LocalStorage fallback mode.");
@@ -521,6 +532,7 @@ var routes_default = router;
 
 // server/index.ts
 dotenv2.config();
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 var app = express();
 var PORT = Number(process.env.PORT) || 8080;
 app.use(cors());
