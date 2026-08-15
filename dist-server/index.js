@@ -35,19 +35,43 @@ var pool = new Pool({
   idleTimeoutMillis: 3e4,
   connectionTimeoutMillis: 1e4
 });
+pool.on("connect", async (client) => {
+  try {
+    const userRes = await client.query("SELECT CURRENT_USER as u");
+    const currUser = userRes.rows[0]?.u;
+    if (currUser && currUser !== "public") {
+      try {
+        await client.query(`CREATE SCHEMA IF NOT EXISTS "${currUser}"`);
+      } catch {
+      }
+      await client.query(`SET search_path TO "${currUser}", "$user", public`);
+    }
+  } catch (e) {
+    console.log("Search path initialization notice:", e.message);
+  }
+});
 var isDbConfigured = Boolean(rawConnectionString);
 async function createAllTables() {
   if (!isDbConfigured) return { success: false, error: "DATABASE_URL is not configured" };
   let client;
   try {
     client = await pool.connect();
+    let targetSchema = "public";
     try {
-      await client.query("CREATE SCHEMA IF NOT EXISTS budgetapp;");
-      await client.query("SET search_path TO budgetapp, public;");
+      const userRes = await client.query("SELECT CURRENT_USER as u");
+      const currUser = userRes.rows[0]?.u;
+      if (currUser && currUser !== "public") {
+        try {
+          await client.query(`CREATE SCHEMA IF NOT EXISTS "${currUser}"`);
+        } catch {
+        }
+        targetSchema = currUser;
+      }
+      await client.query(`SET search_path TO "${targetSchema}", "$user", public`);
     } catch {
     }
     const statements = [
-      `CREATE TABLE IF NOT EXISTS users (
+      `CREATE TABLE IF NOT EXISTS "${targetSchema}".users (
           id VARCHAR(64) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           email VARCHAR(255) UNIQUE NOT NULL,
@@ -55,7 +79,7 @@ async function createAllTables() {
           avatar TEXT,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
-      `CREATE TABLE IF NOT EXISTS workspaces (
+      `CREATE TABLE IF NOT EXISTS "${targetSchema}".workspaces (
           id VARCHAR(64) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           description TEXT,
@@ -63,14 +87,14 @@ async function createAllTables() {
           currency VARCHAR(10) DEFAULT 'DKK',
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
-      `CREATE TABLE IF NOT EXISTS workspace_members (
+      `CREATE TABLE IF NOT EXISTS "${targetSchema}".workspace_members (
           workspace_id VARCHAR(64),
           user_id VARCHAR(64),
           role VARCHAR(20) NOT NULL DEFAULT 'owner',
           joined_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           PRIMARY KEY (workspace_id, user_id)
       )`,
-      `CREATE TABLE IF NOT EXISTS categories (
+      `CREATE TABLE IF NOT EXISTS "${targetSchema}".categories (
           id VARCHAR(64) PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           name_fa VARCHAR(255),
@@ -78,7 +102,7 @@ async function createAllTables() {
           color VARCHAR(32) NOT NULL,
           type VARCHAR(20) NOT NULL
       )`,
-      `CREATE TABLE IF NOT EXISTS transactions (
+      `CREATE TABLE IF NOT EXISTS "${targetSchema}".transactions (
           id VARCHAR(64) PRIMARY KEY,
           workspace_id VARCHAR(64),
           type VARCHAR(20) NOT NULL,
@@ -95,7 +119,7 @@ async function createAllTables() {
           created_by_avatar TEXT,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
-      `CREATE TABLE IF NOT EXISTS budget_limits (
+      `CREATE TABLE IF NOT EXISTS "${targetSchema}".budget_limits (
           id VARCHAR(64) PRIMARY KEY,
           workspace_id VARCHAR(64),
           category_id VARCHAR(64),
@@ -103,11 +127,11 @@ async function createAllTables() {
           limit_amount NUMERIC(14, 2) NOT NULL,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )`,
-      `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
-      `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE`,
-      `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurring_months INT DEFAULT 1`,
-      `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
-      `CREATE INDEX IF NOT EXISTS idx_tx_ws ON transactions(workspace_id)`
+      `ALTER TABLE "${targetSchema}".users ADD COLUMN IF NOT EXISTS password_hash TEXT`,
+      `ALTER TABLE "${targetSchema}".transactions ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT FALSE`,
+      `ALTER TABLE "${targetSchema}".transactions ADD COLUMN IF NOT EXISTS recurring_months INT DEFAULT 1`,
+      `CREATE INDEX IF NOT EXISTS idx_users_email ON "${targetSchema}".users(email)`,
+      `CREATE INDEX IF NOT EXISTS idx_tx_ws ON "${targetSchema}".transactions(workspace_id)`
     ];
     for (const sql of statements) {
       await client.query(sql);
