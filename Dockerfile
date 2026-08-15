@@ -21,7 +21,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV PORT=80
+ENV PORT=8080
 
 # Copy package manifests
 COPY package*.json ./
@@ -34,7 +34,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/dist-server ./dist-server
 
 # Expose standard container port
-EXPOSE 80
+EXPOSE 8080
 
 # Run production server connected to PostgreSQL & serving PWA
 CMD ["node", "dist-server/index.js"]

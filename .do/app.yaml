@@ -1,19 +1,24 @@
 name: budgetmaster-app
-region: ams # Amsterdam (Europe) - can be changed to fra, nyc, etc.
+region: ams
 
 services:
-- name: web
+- name: budgetapp
   dockerfilePath: Dockerfile
   source_dir: /
   github:
     branch: main
     repo: mojtabafld/BudgetApp
     deploy_on_push: true
-  http_port: 80
+  http_port: 8080
   instance_count: 1
   instance_size_slug: apps-s-1vcpu-0.5gb
   routes:
   - path: /
+  health_check:
+    http_path: /health
+    initial_delay_seconds: 5
+    period_seconds: 10
+    timeout_seconds: 5
   envs:
   - key: DATABASE_URL
     scope: RUN_TIME
@@ -21,14 +26,16 @@ services:
   - key: NODE_ENV
     scope: RUN_TIME
     value: production
+  - key: PORT
+    scope: RUN_TIME
+    value: "8080"
   - key: DEFAULT_CURRENCY
     scope: RUN_TIME
     value: DKK
 
-# Automatically Provisioned Managed PostgreSQL Database on DigitalOcean
 databases:
 - engine: PG
   name: budgetmaster-db
   num_nodes: 1
-  size: db-s-dev-database # Development database tier on DigitalOcean
+  size: db-s-dev-database
   version: "16"

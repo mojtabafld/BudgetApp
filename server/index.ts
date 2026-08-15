@@ -8,10 +8,15 @@ import { initDatabase } from './db';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 8080;
 
 app.use(cors());
 app.use(express.json());
+
+// API health endpoint for DigitalOcean health checks
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
 
 // Mount API routes
 app.use('/api', apiRouter);
@@ -20,19 +25,31 @@ app.use('/api', apiRouter);
 const distPath = path.join(process.cwd(), 'dist');
 app.use(express.static(distPath));
 
-// Fallback for Single Page Application
-app.get('*', (req, res) => {
+// Express 5 compatible Catch-all for Single Page Application routing
+app.use((req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-async function startServer() {
-  // Initialize Database Schema if DATABASE_URL is set
-  await initDatabase();
+// Global Error Handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Unhandled server error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
 
-  app.listen(PORT, () => {
-    console.log(`🚀 BudgetMaster server running on port ${PORT}`);
-    console.log(`📡 API Endpoints available at http://localhost:${PORT}/api`);
+// Start listening immediately on 0.0.0.0 for DigitalOcean health checks
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 BudgetMaster server running on 0.0.0.0:${PORT}`);
+  console.log(`📡 Health check active at http://0.0.0.0:${PORT}/health`);
+
+  // Initialize Database Schema asynchronously without blocking the web listener
+  initDatabase().catch((err) => {
+    console.error('Database background initialization error:', err);
   });
-}
+});
 
-startServer();
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+  });
+});

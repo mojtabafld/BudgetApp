@@ -395,20 +395,32 @@ var routes_default = router;
 // server/index.ts
 dotenv2.config();
 var app = express();
-var PORT = process.env.PORT || 3e3;
+var PORT = Number(process.env.PORT) || 8080;
 app.use(cors());
 app.use(express.json());
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" });
+});
 app.use("/api", routes_default);
 var distPath = path.join(process.cwd(), "dist");
 app.use(express.static(distPath));
-app.get("*", (req, res) => {
+app.use((req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
-async function startServer() {
-  await initDatabase();
-  app.listen(PORT, () => {
-    console.log(`\u{1F680} BudgetMaster server running on port ${PORT}`);
-    console.log(`\u{1F4E1} API Endpoints available at http://localhost:${PORT}/api`);
+app.use((err, req, res, next) => {
+  console.error("Unhandled server error:", err);
+  res.status(500).json({ error: "Internal server error" });
+});
+var server = app.listen(PORT, "0.0.0.0", () => {
+  console.log(`\u{1F680} BudgetMaster server running on 0.0.0.0:${PORT}`);
+  console.log(`\u{1F4E1} Health check active at http://0.0.0.0:${PORT}/health`);
+  initDatabase().catch((err) => {
+    console.error("Database background initialization error:", err);
   });
-}
-startServer();
+});
+process.on("SIGTERM", () => {
+  console.log("SIGTERM signal received: closing HTTP server");
+  server.close(() => {
+    console.log("HTTP server closed");
+  });
+});
