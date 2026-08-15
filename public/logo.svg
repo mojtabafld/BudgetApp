@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4338ca;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#4f46e5" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  
+  <!-- Background Rounded Rect -->
+  <rect x="8" y="8" width="84" height="84" rx="24" fill="url(#grad1)" filter="url(#shadow)" />
+  
+  <!-- Wallet / Card Emblem -->
+  <rect x="22" y="26" width="56" height="48" rx="10" fill="#ffffff" fill-opacity="0.15" stroke="#ffffff" stroke-width="3" stroke-dasharray="0" />
+  
+  <!-- Flap / Glow element -->
+  <path d="M 22 40 L 78 40" stroke="#ffffff" stroke-width="2.5" stroke-opacity="0.6" stroke-linecap="round" />
+  
+  <!-- Growth Pulse Arrow & Currency Node -->
+  <circle cx="50" cy="54" r="12" fill="url(#grad2)" />
+  <path d="M 44 55 L 48 51 L 52 54 L 56 48" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  <polyline points="53,48 56,48 56,51" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
